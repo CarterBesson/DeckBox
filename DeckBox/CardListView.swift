@@ -15,10 +15,42 @@ struct CardListView: View {
     @State private var isAdding = false
     @State private var isScanning = false
     @State private var selectedTag: Tag? = nil
+    @State private var searchText = ""
     
     private var filteredCards: [Card] {
-        guard let tag = selectedTag else { return cards }
-        return cards.filter { $0.tags.contains(where: { $0.id == tag.id }) }
+        let tagFiltered = selectedTag == nil ? cards : cards.filter { $0.tags.contains(where: { $0.id == selectedTag?.id }) }
+        
+        if searchText.isEmpty {
+            return tagFiltered
+        }
+        
+        return tagFiltered.filter { card in
+            card.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+    
+    private var searchBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search cards...", text: $searchText)
+                    .textFieldStyle(.plain)
+                if !searchText.isEmpty {
+                    Button(action: { searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(10)
+            .background(Color(.systemGray6))
+            .cornerRadius(10)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .background(Color(.systemBackground))
     }
     
     private var tagFilterView: some View {
@@ -132,6 +164,8 @@ struct CardListView: View {
                     }
                     .onDelete(perform: delete)
                 }
+                
+                searchBar
             }
             .navigationTitle("My Cards")
             .toolbar {
