@@ -12,7 +12,8 @@ import SwiftData
 struct DeckBoxApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            Card.self,
+            Tag.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
