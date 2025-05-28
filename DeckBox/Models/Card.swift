@@ -17,6 +17,7 @@ final class Card{
     var collectorNumber: String?
     var quantity: Int = 1
     var imageURL: URL? = nil
+    var collections: [String] = []
     
     @Relationship(deleteRule: .cascade) var tags: [Tag] = []
     
@@ -26,7 +27,8 @@ final class Card{
          collectorNumber: String? = nil,
          quantity: Int = 1,
          imageURL: URL? = nil,
-         tags: [Tag] = []) {
+         tags: [Tag] = [],
+         collections: [String] = []) {
         self.game = game
         self.name = name
         self.setCode = setCode
@@ -34,22 +36,6 @@ final class Card{
         self.quantity = quantity
         self.tags = tags
         self.imageURL = imageURL
-    }
-}
-
-@Model
-final class Tag {
-    @Attribute(.unique) var id: UUID = UUID()
-    @Attribute(.unique) var name: String
-    var color: String = "blue"  // Store as hex or named color
-    var category: String?       // Optional category for organizing tags
-    var createdAt: Date = Date()
-    @Relationship(inverse: \Card.tags) var cards: [Card] = []
-    
-    init(name: String, color: String = "blue", category: String? = nil) {
-        self.id = UUID()
-        self.name = name
-        self.color = color
-        self.category = category
+        self.collections = collections
     }
 }

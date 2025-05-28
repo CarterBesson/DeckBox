@@ -192,6 +192,7 @@ struct TagEditorView: View {
     @State private var name = ""
     @State private var color = "mtgBlue"
     @State private var category = ""
+    @State private var showDuplicateAlert = false
     
     private let colorGroups = [
         ColorGroup(name: "Mana Colors", colors: [
@@ -252,32 +253,80 @@ struct TagEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        save()
-                        dismiss()
+                        if save() {
+                            dismiss()
+                        }
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
+        .alert("Duplicate Tag", isPresented: $showDuplicateAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("A tag with that name already exists.")
+        }
     }
     
-    private func save() {
+    private func save() -> Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let trimmedCategory = category.trimmingCharacters(in: .whitespaces)
         
         switch mode {
         case .create:
+            let allTags = try? modelContext.fetch(FetchDescriptor<Tag>())
+            if allTags?.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) == true {
+                showDuplicateAlert = true
+                return false
+            }
             let tag = Tag(
                 name: trimmedName,
                 color: color,
                 category: trimmedCategory.isEmpty ? nil : trimmedCategory
             )
             modelContext.insert(tag)
+            return true
             
         case .edit(let tag):
             tag.name = trimmedName
             tag.color = color
             tag.category = trimmedCategory.isEmpty ? nil : trimmedCategory
+            return true
         }
     }
-} 
+}
+
+import SwiftUI
+import SwiftData
+
+struct TagPickerView: View {
+    @Binding var selectedTags: [Tag]
+    @Query(sort: \Tag.name) private var allTags: [Tag]
+
+    var body: some View {
+        List {
+            ForEach(allTags) { tag in
+                Button(action: {
+                    if selectedTags.contains(tag) {
+                        selectedTags.removeAll { $0 == tag }
+                    } else {
+                        selectedTags.append(tag)
+                    }
+                }) {
+                    HStack {
+                        Circle()
+                            .fill(Color.fromName(tag.color))
+                            .frame(width: 12, height: 12)
+
+                        Text(tag.name)
+                        Spacer()
+                        if selectedTags.contains(tag) {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Select Tags")
+    }
+}

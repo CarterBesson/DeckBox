@@ -16,17 +16,28 @@ struct CardListView: View {
     @State private var isScanning = false
     @State private var selectedTag: Tag? = nil
     @State private var searchText = ""
+    @State private var selectedCollection = "Library"
     
     private var filteredCards: [Card] {
-        let tagFiltered = selectedTag == nil ? cards : cards.filter { $0.tags.contains(where: { $0.id == selectedTag?.id }) }
-        
+        let baseCards: [Card]
+        switch selectedCollection {
+        case "Decks":
+            baseCards = cards.filter { $0.collections.contains("Decks") }
+        case "Cubes":
+            baseCards = cards.filter { $0.collections.contains("Cubes") }
+        default:
+            baseCards = cards
+        }
+
+        let tagFiltered = selectedTag == nil ? baseCards : baseCards.filter {
+            $0.tags.contains(where: { $0.id == selectedTag?.id })
+        }
+
         if searchText.isEmpty {
             return tagFiltered
         }
-        
-        return tagFiltered.filter { card in
-            card.name.localizedCaseInsensitiveContains(searchText)
-        }
+
+        return tagFiltered.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
     
     private var searchBar: some View {
@@ -124,6 +135,25 @@ struct CardListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                Menu {
+                    Button("Library") { selectedCollection = "Library" }
+                    Button("Decks") { selectedCollection = "Decks" }
+                    Button("Cubes") { selectedCollection = "Cubes" }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(selectedCollection)
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        Image(systemName: "chevron.down")
+                            .font(.title3)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                }
+                
                 tagFilterView
                     .padding(.vertical, 8)
                 
@@ -167,7 +197,6 @@ struct CardListView: View {
                 
                 searchBar
             }
-            .navigationTitle("My Cards")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     EditButton()
@@ -251,4 +280,10 @@ private struct AddButton: View {
       Label("Add", systemImage: "plus")
     }
   }
+}
+
+
+#Preview {
+    ContentView()
+        .modelContainer(for: Card.self, inMemory: true)
 }
