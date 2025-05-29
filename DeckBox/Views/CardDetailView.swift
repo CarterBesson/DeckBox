@@ -5,18 +5,28 @@
 //  Created by Carter Besson on 5/24/25.
 //
 
+// MARK: - Card Detail View
+/// Detailed view for a single card, showing its image, metadata, and tags.
+/// Allows editing of card quantity and management of tags.
+
 import SwiftUI
 import SwiftData
 
 struct CardDetailView: View {
+    /// The card being displayed and edited
     @Bindable var card: Card             // SwiftData auto–bindable
     @Environment(\.modelContext) private var modelContext
 
+    // MARK: - View State
+    
+    /// Controls visibility of the add tag sheet
     @State private var isAddingTag = false
     @State private var newTagName   = ""
 
     // MARK: – Subviews
 
+    /// Displays the card's image if available
+    /// Shows a placeholder if the image is loading or unavailable
     private var cardImageSection: some View {
         Group {
             if let url = card.imageURL {
@@ -33,6 +43,8 @@ struct CardDetailView: View {
         }
     }
 
+    /// Section for displaying and managing card tags
+    /// Shows a horizontal scrolling list of tags with delete functionality
     private var tagsSection: some View {
         VStack(alignment: .leading) {
             HStack {
@@ -75,13 +87,17 @@ struct CardDetailView: View {
         }
     }
 
+    /// Sheet view for adding new tags to the card
+    /// Provides tag search, selection from existing tags, and creation of new tags
     private var addTagSheet: some View {
         NavigationStack {
             List {
+                // Search field
                 Section {
                     TextField("Search tags...", text: $newTagName)
                 }
                 
+                // Existing tags section
                 Section {
                     let existingTags = try? modelContext.fetch(FetchDescriptor<Tag>(sortBy: [SortDescriptor(\.name)]))
                     if let tags = existingTags {
@@ -113,6 +129,7 @@ struct CardDetailView: View {
                     Text("Existing Tags")
                 }
                 
+                // New tag creation section
                 if !newTagName.isEmpty {
                     Section {
                         Button("Create \"\(newTagName)\"") {
@@ -187,6 +204,8 @@ struct CardDetailView: View {
     }
 }
 
+/// Preview provider for CardDetailView
+/// Uses an in-memory model container for testing
 #Preview {
     ContentView()
         .modelContainer(for: Card.self, inMemory: true)

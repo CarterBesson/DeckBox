@@ -1,40 +1,54 @@
-//
-//  AddCardView.swift
-//  DeckBox
-//
-//  Created by Carter Besson on 5/25/25.
-//
+// MARK: - Add Card View
+/// View for adding new cards to the library.
+/// Provides a form for entering card names and fetches card data from an external service.
+/// Currently supports Scryfall as the data source.
 
 import SwiftUI
 import SwiftData
 
 struct AddCardView: View {
+    /// SwiftData model context for database operations
     @Environment(\.modelContext) private var context
-    @Environment(\.dismiss)    private var dismiss
+    
+    /// Environment value to dismiss the view
+    @Environment(\.dismiss) private var dismiss
 
-    @State private var cardName  = ""
+    // MARK: - View State
+    
+    /// Name of the card to add
+    @State private var cardName = ""
+    
+    /// Loading state during API requests
     @State private var isLoading = false
-    @State private var errorMsg  : String?
+    
+    /// Error message to display if the card lookup fails
+    @State private var errorMsg: String?
 
-    // Our lookup service
+    /// Service for fetching card data from external APIs
     let service: CardDataService = ScryfallService()
 
     var body: some View {
         NavigationStack {
             Form {
+                // Card name input section
                 Section("Card Name") {
                     TextField("e.g. Black Lotus", text: $cardName)
                         .autocapitalization(.words)
                 }
+                
+                // Error message display
                 if let error = errorMsg {
                     Section { Text(error).foregroundColor(.red) }
                 }
             }
             .navigationTitle("Add a Card")
             .toolbar {
+                // Cancel button
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+                
+                // Add button with loading state
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         Task { await addCard() }
@@ -51,13 +65,16 @@ struct AddCardView: View {
         }
     }
     
-    
-
+    /// Attempts to add a new card to the library
+    /// 1. Fetches card data from the external service
+    /// 2. Creates a new Card entity with the fetched data
+    /// 3. Inserts the card into the database
+    /// 4. Dismisses the view on success or shows error on failure
     private func addCard() async {
         isLoading = true
-        errorMsg  = nil
+        errorMsg = nil
         do {
-            let dto  = try await service.fetchCard(named: cardName)
+            let dto = try await service.fetchCard(named: cardName)
             let card = Card(from: dto)
             context.insert(card)
             dismiss()
@@ -68,6 +85,8 @@ struct AddCardView: View {
     }
 }
 
+/// Preview provider for AddCardView
+/// Uses an in-memory model container for testing
 #Preview {
     AddCardView()
         .modelContainer(for: Card.self, inMemory: true)

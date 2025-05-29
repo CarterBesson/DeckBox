@@ -1,13 +1,28 @@
+// MARK: - Tag Management
+/// Views and components for managing tags in the application.
+/// Provides functionality for creating, editing, and deleting tags,
+/// as well as organizing them by categories and colors.
+
 import SwiftUI
 import SwiftData
 
+// MARK: - Tag Management View
+/// Main view for managing all tags in the system
+/// Displays a list of existing tags and provides options to add, edit, or delete them
 struct TagManagementView: View {
+    /// SwiftData model context for database operations
     @Environment(\.modelContext) private var modelContext
+    
+    /// All tags in the system, sorted by name
     @Query(sort: \Tag.name) private var allTags: [Tag]
+    
+    /// Controls visibility of the add tag sheet
     @State private var isAddingTag = false
+    
+    /// Currently selected tag for editing
     @State private var selectedTag: Tag?
     
-    // Available colors for tags
+    /// Standard colors available for tag customization
     private let availableColors = [
         "blue", "green", "red", "purple", "orange", "pink", "gray"
     ]
@@ -42,6 +57,7 @@ struct TagManagementView: View {
         }
     }
     
+    /// Deletes tags at the specified indices
     private func deleteTags(at offsets: IndexSet) {
         for index in offsets {
             modelContext.delete(allTags[index])
@@ -49,16 +65,21 @@ struct TagManagementView: View {
     }
 }
 
-// Helper view for displaying a tag in the list
+// MARK: - Tag Row View
+/// Helper view for displaying a single tag in the list
+/// Shows the tag's color, name, category, and card count
 private struct TagRowView: View {
+    /// The tag to display
     let tag: Tag
     
     var body: some View {
         HStack {
+            // Color indicator
             Circle()
                 .fill(Color.fromName(tag.color))
                 .frame(width: 12, height: 12)
             
+            // Tag details
             VStack(alignment: .leading) {
                 Text(tag.name)
                     .font(.body)
@@ -71,6 +92,7 @@ private struct TagRowView: View {
             
             Spacer()
             
+            // Card count
             Text("\(tag.cards.count)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -79,9 +101,14 @@ private struct TagRowView: View {
     }
 }
 
-// Color picker component
+// MARK: - Tag Color Picker
+/// Horizontal scrolling color picker component
+/// Displays available colors as selectable circles
 private struct TagColorPicker: View {
+    /// Currently selected color name
     @Binding var selectedColor: String
+    
+    /// Available colors to choose from
     let availableColors: [String]
     
     var body: some View {
@@ -100,9 +127,13 @@ private struct TagColorPicker: View {
     }
 }
 
-// Color group definition
+// MARK: - Color Group Model
+/// Represents a group of related colors (e.g., "Mana Colors", "Guild Colors")
 struct ColorGroup {
+    /// Name of the color group
     let name: String
+    
+    /// Colors in this group, with their names and Color values
     let colors: [(name: String, color: Color)]
 }
 
@@ -110,7 +141,9 @@ extension ColorGroup: Identifiable {
     var id: String { name }
 }
 
-// Helper function to convert color names to Color objects
+// MARK: - Color Utilities
+/// Converts color names to SwiftUI Color objects
+/// Supports Magic: The Gathering color scheme
 private func color(from name: String) -> Color {
     switch name {
     case "mtgWhite": return .mtgWhite
@@ -136,9 +169,13 @@ private func color(from name: String) -> Color {
     }
 }
 
-// Color group section component
+// MARK: - Color Group Section
+/// Displays a grid of colors for a specific color group
 private struct ColorGroupSection: View {
+    /// The color group to display
     let group: ColorGroup
+    
+    /// Currently selected color name
     @Binding var selectedColor: String
     
     var body: some View {
@@ -159,10 +196,17 @@ private struct ColorGroupSection: View {
     }
 }
 
-// Color button component
+// MARK: - Color Button
+/// Interactive color selection button
+/// Displays a color circle with selection state
 private struct ColorButton: View {
+    /// The color to display
     let color: Color
+    
+    /// Whether this color is currently selected
     let isSelected: Bool
+    
+    /// Action to perform when tapped
     let action: () -> Void
     
     var body: some View {
@@ -178,22 +222,40 @@ private struct ColorButton: View {
     }
 }
 
-// View for creating/editing tags
+// MARK: - Tag Editor View
+/// View for creating new tags or editing existing ones
+/// Provides fields for name, category, and color selection
 struct TagEditorView: View {
+    /// Defines whether we're creating a new tag or editing an existing one
     enum Mode: Equatable {
         case create
         case edit(Tag)
     }
     
+    /// Current editing mode
     let mode: Mode
+    
+    /// SwiftData model context for database operations
     @Environment(\.modelContext) private var modelContext
+    
+    /// Environment value to dismiss the view
     @Environment(\.dismiss) private var dismiss
     
+    // MARK: - View State
+    
+    /// Tag name input
     @State private var name = ""
+    
+    /// Selected color name
     @State private var color = "mtgBlue"
+    
+    /// Optional category input
     @State private var category = ""
+    
+    /// Controls visibility of duplicate name alert
     @State private var showDuplicateAlert = false
     
+    /// Available color groups for tag customization
     private let colorGroups = [
         ColorGroup(name: "Mana Colors", colors: [
             ("mtgWhite", .mtgWhite),
@@ -222,6 +284,8 @@ struct TagEditorView: View {
         ])
     ]
     
+    /// Initializes the view with the specified mode
+    /// If editing, populates the form with the tag's current values
     init(mode: Mode) {
         self.mode = mode
         if case .edit(let tag) = mode {
@@ -234,11 +298,13 @@ struct TagEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // Tag details section
                 Section("Tag Details") {
                     TextField("Name", text: $name)
                     TextField("Category (optional)", text: $category)
                 }
                 
+                // Color selection sections
                 ForEach(colorGroups) { group in
                     ColorGroupSection(
                         group: group,
