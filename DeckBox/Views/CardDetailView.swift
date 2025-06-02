@@ -170,28 +170,128 @@ struct CardDetailView: View {
             cardImageSection
 
             VStack(alignment: .leading, spacing: 12) {
-                // Card name
-                Text(card.name)
-                    .font(.title2)
-                    .bold()
-
-                // Set code & collector number
+                // Card name and mana cost
                 HStack {
-                    Text(card.setCode ?? "")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Text(card.name)
+                        .font(.title2)
+                        .bold()
                     Spacer()
-                    Text("#\(card.collectorNumber ?? "–")")
-                        .font(.subheadline)
+                    if let manaCost = card.manaCost {
+                        Text(manaCost)
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // Type line
+                Text(card.typeLine)
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+
+                // Set information
+                HStack {
+                    if let setName = card.setName {
+                        Text(setName)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let collectorNumber = card.collectorNumber {
+                        Text("#\(collectorNumber)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // Oracle text
+                if let oracleText = card.oracleText {
+                    Text(oracleText)
+                        .padding(.vertical, 4)
+                }
+
+                // Flavor text
+                if let flavorText = card.flavorText {
+                    Text(flavorText)
+                        .italic()
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 4)
+                }
+
+                // Power/Toughness or Loyalty
+                if let power = card.power, let toughness = card.toughness {
+                    Text("\(power)/\(toughness)")
+                        .font(.headline)
+                } else if let loyalty = card.loyalty {
+                    Text("Loyalty: \(loyalty)")
+                        .font(.headline)
+                }
+
+                // Artist credit
+                if let artist = card.artist {
+                    Text("Illustrated by \(artist)")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                Divider()
+
+                // Card details section
+                Group {
+                    // Rarity and Reserved List status
+                    HStack {
+                        Text(card.rarity.capitalized)
+                            .font(.subheadline)
+                        if card.isReserved {
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(.yellow)
+                            Text("Reserved List")
+                                .font(.subheadline)
+                        }
+                    }
+
+                    // Colors and Color Identity
+                    if !card.colors.isEmpty {
+                        Text("Colors: \(card.colors.joined(separator: ", "))")
+                            .font(.subheadline)
+                    }
+                    if !card.colorIdentity.isEmpty {
+                        Text("Color Identity: \(card.colorIdentity.joined(separator: ", "))")
+                            .font(.subheadline)
+                    }
+
+                    // Keywords
+                    if !card.keywords.isEmpty {
+                        Text("Keywords: \(card.keywords.joined(separator: ", "))")
+                            .font(.subheadline)
+                    }
+
+                    // Legalities
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Format Legality:")
+                            .font(.subheadline)
+                            .bold()
+                        ForEach(Array(card.legalities.sorted(by: { $0.key < $1.key })), id: \.key) { format, legality in
+                            HStack {
+                                Text(format.capitalized)
+                                    .font(.caption)
+                                Spacer()
+                                Text(legality.capitalized)
+                                    .font(.caption)
+                                    .foregroundStyle(legality == "legal" ? .green : .red)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Divider()
 
                 // Quantity stepper
                 Stepper("Quantity: \(card.quantity)",
                         value: $card.quantity,
                         in: 1...99)
 
-                // Tags
+                // Tags section
                 tagsSection
             }
             .padding()

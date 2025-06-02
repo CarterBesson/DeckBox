@@ -95,11 +95,14 @@ struct CardSelectionView: View {
     /// Only shows cards that have remaining quantity available to add to the group
     private var filteredCards: [Card] {
         if searchText.isEmpty {
-            return allCards.filter { group.quantity(for: $0) < $0.quantity }
+            return allCards.filter { card in
+                let remaining = card.quantity - group.quantity(for: card)
+                return remaining > 0
+            }
         }
         return allCards.filter { card in
-            group.quantity(for: card) < card.quantity &&
-            card.name.localizedCaseInsensitiveContains(searchText)
+            let remaining = card.quantity - group.quantity(for: card)
+            return remaining > 0 && card.name.localizedCaseInsensitiveContains(searchText)
         }
     }
     
@@ -116,29 +119,32 @@ struct CardSelectionView: View {
                     }
                     Spacer()
                     
-                    // Quantity selection controls
-                    // Allows users to specify how many copies of the card to add
-                    Stepper(
-                        value: Binding(
-                            get: { selectedQuantities[card.id] ?? 1 },
-                            set: { selectedQuantities[card.id] = $0 }
-                        ),
-                        // Limit the maximum quantity based on available cards
-                        in: 1...(card.quantity - group.quantity(for: card))
-                    ) {
-                        Text("\(selectedQuantities[card.id] ?? 1)")
-                            .monospacedDigit()
-                            .frame(minWidth: 25)
-                    }
-                    
-                    // Add button to confirm quantity selection
-                    Button {
-                        let quantity = selectedQuantities[card.id] ?? 1
-                        group.setQuantity(group.quantity(for: card) + quantity, for: card)
-                        selectedQuantities[card.id] = 1 // Reset quantity after adding
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundStyle(.blue)
+                    let remainingQuantity = card.quantity - group.quantity(for: card)
+                    if remainingQuantity > 0 {
+                        // Quantity selection controls
+                        // Allows users to specify how many copies of the card to add
+                        Stepper(
+                            value: Binding(
+                                get: { selectedQuantities[card.id] ?? 1 },
+                                set: { selectedQuantities[card.id] = $0 }
+                            ),
+                            // Limit the maximum quantity based on available cards
+                            in: 1...remainingQuantity
+                        ) {
+                            Text("\(selectedQuantities[card.id] ?? 1)")
+                                .monospacedDigit()
+                                .frame(minWidth: 25)
+                        }
+                        
+                        // Add button to confirm quantity selection
+                        Button {
+                            let quantity = selectedQuantities[card.id] ?? 1
+                            group.setQuantity(group.quantity(for: card) + quantity, for: card)
+                            selectedQuantities[card.id] = 1 // Reset quantity after adding
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundStyle(.blue)
+                        }
                     }
                 }
             }

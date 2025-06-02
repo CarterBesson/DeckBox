@@ -13,6 +13,9 @@ struct AddCardView: View {
     /// Environment value to dismiss the view
     @Environment(\.dismiss) private var dismiss
 
+    /// Binding to the newly added card for navigation
+    @Binding var newlyAddedCard: Card?
+
     // MARK: - View State
     
     /// Name of the card to add
@@ -24,6 +27,9 @@ struct AddCardView: View {
     /// Error message to display if the card lookup fails
     @State private var errorMsg: String?
 
+    /// Focus state for the card name text field
+    @FocusState private var isCardNameFocused: Bool
+
     /// Service for fetching card data from external APIs
     let service: CardDataService = ScryfallService()
 
@@ -34,6 +40,13 @@ struct AddCardView: View {
                 Section("Card Name") {
                     TextField("e.g. Black Lotus", text: $cardName)
                         .autocapitalization(.words)
+                        .onSubmit {
+                            if !cardName.trimmingCharacters(in: .whitespaces).isEmpty && !isLoading {
+                                Task { await addCard() }
+                            }
+                        }
+                        .submitLabel(.done)
+                        .focused($isCardNameFocused)
                 }
                 
                 // Error message display
@@ -62,6 +75,9 @@ struct AddCardView: View {
                     .disabled(cardName.trimmingCharacters(in: .whitespaces).isEmpty || isLoading)
                 }
             }
+            .onAppear {
+                isCardNameFocused = true
+            }
         }
     }
     
@@ -75,8 +91,9 @@ struct AddCardView: View {
         errorMsg = nil
         do {
             let dto = try await service.fetchCard(named: cardName)
-            let card = Card(from: dto)
+            let card = Card(from: dto, modelContext: context)
             context.insert(card)
+            newlyAddedCard = card
             dismiss()
         } catch {
             errorMsg = error.localizedDescription
@@ -88,6 +105,6 @@ struct AddCardView: View {
 /// Preview provider for AddCardView
 /// Uses an in-memory model container for testing
 #Preview {
-    AddCardView()
+    AddCardView(newlyAddedCard: .constant(nil))
         .modelContainer(for: Card.self, inMemory: true)
 }

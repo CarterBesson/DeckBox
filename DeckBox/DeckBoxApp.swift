@@ -22,7 +22,20 @@ struct DeckBoxApp: App {
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            
+            // Initialize built-in group types if they don't exist
+            let context = container.mainContext
+            let descriptor = FetchDescriptor<GroupType>()
+            
+            // Only create built-in types if there are no existing group types
+            if (try? context.fetch(descriptor))?.isEmpty ?? true {
+                for type in GroupType.builtInTypes {
+                    context.insert(type)
+                }
+            }
+            
+            return container
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }
