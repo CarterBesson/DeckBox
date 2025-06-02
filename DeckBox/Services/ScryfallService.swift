@@ -91,12 +91,42 @@ struct CardDTO: Decodable {
     }
 }
 
+// MARK: - Scryfall Rate Limiter
+/// Manages rate limiting for Scryfall API requests
+/// Ensures we don't exceed Scryfall's recommended limits
+actor ScryfallRateLimiter {
+    /// Minimum delay between requests (in seconds)
+    private let minDelay: TimeInterval = 0.1 // 100ms between requests
+    
+    /// Time of the last request
+    private var lastRequestTime: Date = .distantPast
+    
+    /// Waits if necessary to maintain the rate limit
+    func waitForNextRequest() async {
+        let now = Date()
+        let timeSinceLastRequest = now.timeIntervalSince(lastRequestTime)
+        
+        if timeSinceLastRequest < minDelay {
+            let waitTime = minDelay - timeSinceLastRequest
+            try? await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
+        }
+        
+        lastRequestTime = Date()
+    }
+}
+
 // MARK: - Scryfall Service Implementation
 /// Implementation of CardDataService using Scryfall.com's API
 /// Provides card data lookup with fuzzy name matching
 struct ScryfallService: CardDataService {
     /// Shared URL session for making network requests
     private let session: URLSession = .shared
+    
+    /// Rate limiter to ensure we don't exceed Scryfall's limits
+    private let rateLimiter = ScryfallRateLimiter()
+    
+    /// Maximum number of retries for rate-limited requests
+    private let maxRetries = 3
 
     /// Fetches card data from Scryfall using fuzzy name matching
     /// - Parameter name: The name of the card to search for
@@ -108,19 +138,60 @@ struct ScryfallService: CardDataService {
             throw URLError(.badURL)
         }
         
-        // Create and execute the API request
-        let url = URL(string: "https://api.scryfall.com/cards/named?fuzzy=\(query)")!
-        let (data, response) = try await session.data(from: url)
-        
-        // Handle 404 responses (Scryfall returns 404 with JSON error details)
-        if let http = response as? HTTPURLResponse, http.statusCode == 404 {
-            let msg = try JSONDecoder().decode([String:String].self, from: data)["details"] ?? "Card not found"
-            throw NSError(domain: "ScryfallService", code: 404, userInfo: [NSLocalizedDescriptionKey: msg])
+        var retryCount = 0
+        while true {
+            do {
+                // Wait for rate limiter before making request
+                await rateLimiter.waitForNextRequest()
+                
+                // Create and execute the API request
+                let url = URL(string: "https://api.scryfall.com/cards/named?fuzzy=\(query)")!
+                let (data, response) = try await session.data(from: url)
+                
+                // Handle HTTP status codes
+                if let httpResponse = response as? HTTPURLResponse {
+                    switch httpResponse.statusCode {
+                    case 200:
+                        // Success - decode the response
+                        let decoder = JSONDecoder()
+                        return try decoder.decode(CardDTO.self, from: data)
+                        
+                    case 404:
+                        // Card not found
+                        let msg = try JSONDecoder().decode([String:String].self, from: data)["details"] ?? "Card not found"
+                        throw NSError(domain: "ScryfallService", code: 404, userInfo: [NSLocalizedDescriptionKey: msg])
+                        
+                    case 429:
+                        // Rate limited - retry after delay if we haven't exceeded max retries
+                        if retryCount < maxRetries {
+                            retryCount += 1
+                            // Exponential backoff: wait longer with each retry
+                            try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(retryCount)) * 1_000_000_000))
+                            continue
+                        }
+                        throw NSError(domain: "ScryfallService", code: 429, userInfo: [NSLocalizedDescriptionKey: "Rate limit exceeded"])
+                        
+                    default:
+                        throw URLError(.badServerResponse)
+                    }
+                }
+                
+                // If we can't cast to HTTPURLResponse, something is wrong
+                throw URLError(.badServerResponse)
+            } catch {
+                // If this was a retry and we got an error, throw it
+                if retryCount > 0 {
+                    throw error
+                }
+                // Otherwise, if it's a network error, retry once
+                if (error as? URLError)?.code == .networkConnectionLost {
+                    retryCount += 1
+                    continue
+                }
+                // For all other errors, throw immediately
+                throw error
+            }
         }
-        
-        // Decode the response into our DTO
-        let decoder = JSONDecoder()
-        return try decoder.decode(CardDTO.self, from: data)
     }
 }
 
