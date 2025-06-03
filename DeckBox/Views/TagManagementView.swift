@@ -373,8 +373,8 @@ struct TagPickerView: View {
         List {
             ForEach(allTags) { tag in
                 Button(action: {
-                    if selectedTags.contains(tag) {
-                        selectedTags.removeAll { $0 == tag }
+                    if selectedTags.contains(where: { $0.id == tag.id }) {
+                        selectedTags.removeAll { $0.id == tag.id }
                     } else {
                         selectedTags.append(tag)
                     }
@@ -386,7 +386,7 @@ struct TagPickerView: View {
 
                         Text(tag.name)
                         Spacer()
-                        if selectedTags.contains(tag) {
+                        if selectedTags.contains(where: { $0.id == tag.id }) {
                             Image(systemName: "checkmark")
                         }
                     }
