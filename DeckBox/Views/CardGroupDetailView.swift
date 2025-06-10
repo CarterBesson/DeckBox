@@ -1,6 +1,76 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - Card Tag Display
+/// A view that displays up to 3 tags for a card with an overflow indicator
+private struct CardTagDisplay: View {
+    let tags: [Tag]
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(tags.prefix(3), id: \.name) { tag in
+                HStack(spacing: 2) {
+                    Circle()
+                        .fill(Color.fromName(tag.color))
+                        .frame(width: 8, height: 8)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.tagBorder(colorName: tag.color, colorScheme: colorScheme), lineWidth: 1)
+                        )
+                }
+                .padding(.vertical, 2)
+                .padding(.horizontal, 4)
+                .background(Color.tagBackground(colorName: tag.color, colorScheme: colorScheme))
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(Color.tagBorder(colorName: tag.color, colorScheme: colorScheme), lineWidth: 1)
+                )
+            }
+            if tags.count > 3 {
+                Text("+\(tags.count - 3)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Card Row View
+/// A view that displays a single card row in the group
+private struct CardRowView: View {
+    let card: Card
+    let group: CardGroup
+    
+    var body: some View {
+        NavigationLink(value: card) {
+            HStack {
+                // Card name display
+                Text(card.name)
+                    .font(.headline)
+                    .lineLimit(1)
+                
+                Spacer()
+                
+                // Quantity indicator
+                Text("×\(group.quantity(for: card))")
+                    .foregroundStyle(.secondary)
+                
+                // Tag visualization
+                CardTagDisplay(tags: card.tags)
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                group.setQuantity(0, for: card)
+            } label: {
+                Label("Remove", systemImage: "minus.circle")
+            }
+        }
+    }
+}
+
 // MARK: - Card Group Detail View
 /// A view that displays the details of a card group, including a list of cards and their quantities.
 /// Allows for navigation to card details and adding new cards to the group.
@@ -19,43 +89,7 @@ struct CardGroupDetailView: View {
         List {
             // Display each card in the group with its quantity and tags
             ForEach(sortedCards) { card in
-                NavigationLink(value: card) {
-                    HStack {
-                        // Card name display
-                        Text(card.name)
-                            .font(.headline)
-                            .lineLimit(1)
-                        
-                        Spacer()
-                        
-                        // Quantity indicator
-                        Text("×\(group.quantity(for: card))")
-                            .foregroundStyle(.secondary)
-                        
-                        // Tag visualization section
-                        // Shows up to 3 tags as colored circles, with a count for additional tags
-                        HStack(spacing: 4) {
-                            ForEach(card.tags.prefix(3), id: \.name) { tag in
-                                Circle()
-                                    .fill(Color.fromName(tag.color))
-                                    .frame(width: 8, height: 8)
-                            }
-                            if card.tags.count > 3 {
-                                Text("+\(card.tags.count - 3)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                // Swipe action to remove card from group
-                .swipeActions(edge: .trailing) {
-                    Button(role: .destructive) {
-                        group.setQuantity(0, for: card)
-                    } label: {
-                        Label("Remove", systemImage: "minus.circle")
-                    }
-                }
+                CardRowView(card: card, group: group)
             }
         }
         .navigationTitle(group.name)
@@ -81,6 +115,57 @@ struct CardGroupDetailView: View {
     }
 }
 
+// MARK: - Card Selection Row View
+/// A view that displays a single card row in the card selection list
+private struct CardSelectionRowView: View {
+    let card: Card
+    let group: CardGroup
+    let remainingQuantity: Int
+    @Binding var selectedQuantities: [UUID: Int]
+    
+    var body: some View {
+        HStack {
+            // Card information section
+            VStack(alignment: .leading) {
+                HStack {
+                    Text(card.name)
+                    CardTagDisplay(tags: card.tags)
+                }
+                Text("Library: ×\(card.quantity) • In Group: ×\(group.quantity(for: card))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            if remainingQuantity > 0 {
+                // Quantity selection controls
+                Stepper(
+                    value: Binding(
+                        get: { selectedQuantities[card.id] ?? 1 },
+                        set: { selectedQuantities[card.id] = $0 }
+                    ),
+                    in: 1...remainingQuantity
+                ) {
+                    Text("\(selectedQuantities[card.id] ?? 1)")
+                        .monospacedDigit()
+                        .frame(minWidth: 25)
+                }
+                
+                // Add button
+                Button {
+                    let quantity = selectedQuantities[card.id] ?? 1
+                    group.setQuantity(group.quantity(for: card) + quantity, for: card)
+                    selectedQuantities[card.id] = 1 // Reset quantity
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(.blue)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Card Selection View
 /// A view that allows users to select and add cards to a group.
 /// Includes search functionality and quantity selection for each card.
@@ -92,7 +177,6 @@ struct CardSelectionView: View {
     @State private var selectedQuantities: [UUID: Int] = [:]
     
     /// Filters cards based on search text and availability
-    /// Only shows cards that have remaining quantity available to add to the group
     private var filteredCards: [Card] {
         if searchText.isEmpty {
             return allCards.filter { card in
@@ -109,44 +193,13 @@ struct CardSelectionView: View {
     var body: some View {
         List {
             ForEach(filteredCards) { card in
-                HStack {
-                    // Card information section
-                    VStack(alignment: .leading) {
-                        Text(card.name)
-                        Text("Library: ×\(card.quantity) • In Group: ×\(group.quantity(for: card))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    
-                    let remainingQuantity = card.quantity - group.quantity(for: card)
-                    if remainingQuantity > 0 {
-                        // Quantity selection controls
-                        // Allows users to specify how many copies of the card to add
-                        Stepper(
-                            value: Binding(
-                                get: { selectedQuantities[card.id] ?? 1 },
-                                set: { selectedQuantities[card.id] = $0 }
-                            ),
-                            // Limit the maximum quantity based on available cards
-                            in: 1...remainingQuantity
-                        ) {
-                            Text("\(selectedQuantities[card.id] ?? 1)")
-                                .monospacedDigit()
-                                .frame(minWidth: 25)
-                        }
-                        
-                        // Add button to confirm quantity selection
-                        Button {
-                            let quantity = selectedQuantities[card.id] ?? 1
-                            group.setQuantity(group.quantity(for: card) + quantity, for: card)
-                            selectedQuantities[card.id] = 1 // Reset quantity after adding
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundStyle(.blue)
-                        }
-                    }
-                }
+                let remainingQuantity = card.quantity - group.quantity(for: card)
+                CardSelectionRowView(
+                    card: card,
+                    group: group,
+                    remainingQuantity: remainingQuantity,
+                    selectedQuantities: $selectedQuantities
+                )
             }
         }
         .searchable(text: $searchText, prompt: "Search cards...")
