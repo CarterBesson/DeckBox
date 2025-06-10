@@ -131,4 +131,91 @@ extension Color {
             opacity: Double(a) / 255
         )
     }
+}
+
+// MARK: - Tag Color Extensions
+extension Color {
+    /// Returns a tag background color that adapts to the current color scheme
+    /// - Parameters:
+    ///   - colorName: The name of the color to use
+    ///   - colorScheme: The current color scheme (light or dark)
+    /// - Returns: A color suitable for tag backgrounds in the current color scheme
+    static func tagBackground(colorName: String, colorScheme: ColorScheme) -> Color {
+        switch colorScheme {
+        case .light:
+            // In light mode, handle white tags specially
+            switch colorName {
+            case "mtgWhite":
+                return Color(.systemGray5)
+            default:
+                return Color.fromName(colorName).opacity(0.15)
+            }
+        case .dark:
+            // In dark mode, handle black tags specially
+            switch colorName {
+            case "mtgBlack":
+                return Color(.systemGray3)
+            default:
+                return Color.fromName(colorName).opacity(0.4)
+            }
+        @unknown default:
+            return Color.fromName(colorName).opacity(0.2)
+        }
+    }
+    
+    /// Returns a tag text color that ensures readability against the background
+    /// - Parameters:
+    ///   - colorName: The name of the color to use
+    ///   - colorScheme: The current color scheme (light or dark)
+    /// - Returns: A color suitable for tag text in the current color scheme
+    static func tagText(colorName: String, colorScheme: ColorScheme) -> Color {
+        switch colorScheme {
+        case .light:
+            // In light mode, ensure white tags have readable text
+            switch colorName {
+            case "mtgWhite":
+                return .black
+            default:
+                return Color.fromName(colorName).opacity(0.8)
+            }
+        case .dark:
+            // In dark mode, ensure black tags have readable text
+            switch colorName {
+            case "mtgBlack":
+                return .white
+            default:
+                return Color.fromName(colorName).opacity(0.9)
+            }
+        @unknown default:
+            return Color.fromName(colorName)
+        }
+    }
+    
+    /// Returns a tag border color that provides good contrast
+    /// - Parameters:
+    ///   - colorName: The name of the color to use
+    ///   - colorScheme: The current color scheme (light or dark)
+    /// - Returns: A color suitable for tag borders in the current color scheme
+    static func tagBorder(colorName: String, colorScheme: ColorScheme) -> Color {
+        switch colorScheme {
+        case .light:
+            // In light mode, ensure white tags have visible borders
+            switch colorName {
+            case "mtgWhite":
+                return Color(.systemGray3)
+            default:
+                return Color.fromName(colorName).opacity(0.3)
+            }
+        case .dark:
+            // In dark mode, ensure black tags have visible borders
+            switch colorName {
+            case "mtgBlack":
+                return Color(.systemGray)
+            default:
+                return Color.fromName(colorName).opacity(0.6)
+            }
+        @unknown default:
+            return Color.fromName(colorName).opacity(0.4)
+        }
+    }
 } 

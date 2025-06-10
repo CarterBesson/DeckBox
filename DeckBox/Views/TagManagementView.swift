@@ -71,6 +71,7 @@ struct TagManagementView: View {
 private struct TagRowView: View {
     /// The tag to display
     let tag: Tag
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         HStack {
@@ -80,7 +81,7 @@ private struct TagRowView: View {
                 .frame(width: 12, height: 12)
                 .overlay(
                     Circle()
-                        .stroke(Color.primary, lineWidth: 1)
+                        .stroke(Color.tagBorder(colorName: tag.color, colorScheme: colorScheme), lineWidth: 1)
                 )
             
             // Tag details

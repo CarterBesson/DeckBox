@@ -16,6 +16,7 @@ struct CardDetailView: View {
     /// The card being displayed and edited
     @Bindable var card: Card             // SwiftData auto–bindable
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
 
     // MARK: - View State
     
@@ -68,16 +69,21 @@ struct CardDetailView: View {
                                 .frame(width: 8, height: 8)
                                 .overlay(
                                     Circle()
-                                        .stroke(Color.primary, lineWidth: 1)
+                                        .stroke(Color.tagBorder(colorName: tag.color, colorScheme: colorScheme), lineWidth: 1)
                                 )
                             Text(tag.name)
+                                .foregroundColor(Color.tagText(colorName: tag.color, colorScheme: colorScheme))
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(.secondary)
                                 .font(.caption)
                         }
                         .padding(.vertical, 4)
                         .padding(.horizontal, 8)
-                        .background(Color.fromName(tag.color).opacity(0.2))
+                        .background(Color.tagBackground(colorName: tag.color, colorScheme: colorScheme))
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.tagBorder(colorName: tag.color, colorScheme: colorScheme), lineWidth: 1)
+                        )
                         .clipShape(Capsule())
                         .onTapGesture {
                             if let idx = card.tags.firstIndex(where: { $0.name == tag.name }) {
