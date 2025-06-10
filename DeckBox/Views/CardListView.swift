@@ -197,6 +197,10 @@ struct CardListView: View {
                                 Circle()
                                     .fill(tagColor)
                                     .frame(width: 8, height: 8)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.primary, lineWidth: 1)
+                                    )
                                 Text(tag.name)
                                 if tag.cards.count > 0 {
                                     Text("\(tag.cards.count)")
@@ -295,6 +299,10 @@ struct CardListView: View {
                                             Circle()
                                                 .fill(Color.fromName(tag.color))
                                                 .frame(width: 8, height: 8)
+                                                .overlay(
+                                                    Circle()
+                                                        .stroke(Color.primary, lineWidth: 1)
+                                                )
                                         }
                                         if card.tags.count > 3 {
                                             Text("+\(card.tags.count - 3)")

@@ -78,6 +78,10 @@ private struct TagRowView: View {
             Circle()
                 .fill(Color.fromName(tag.color))
                 .frame(width: 12, height: 12)
+                .overlay(
+                    Circle()
+                        .stroke(Color.primary, lineWidth: 1)
+                )
             
             // Tag details
             VStack(alignment: .leading) {
@@ -383,6 +387,10 @@ struct TagPickerView: View {
                         Circle()
                             .fill(Color.fromName(tag.color))
                             .frame(width: 12, height: 12)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.primary, lineWidth: 1)
+                            )
 
                         Text(tag.name)
                         Spacer()

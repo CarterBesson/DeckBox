@@ -66,6 +66,10 @@ struct CardDetailView: View {
                             Circle()
                                 .fill(Color.fromName(tag.color))
                                 .frame(width: 8, height: 8)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.primary, lineWidth: 1)
+                                )
                             Text(tag.name)
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(.secondary)
@@ -109,6 +113,10 @@ struct CardDetailView: View {
                                 Circle()
                                     .fill(Color(tag.color))
                                     .frame(width: 12, height: 12)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.primary, lineWidth: 1)
+                                    )
                                 Text(tag.name)
                                 if let category = tag.category {
                                     Spacer()
