@@ -260,7 +260,7 @@ struct CardListView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(selectedTags.isEmpty ? Color.mtgBlue.opacity(0.2) : Color(.systemGray6))
+                .background(selectedTags.isEmpty ? Color.tagBackground(colorName: "mtgBlue", colorScheme: colorScheme) : Color(.systemGray6))
                 .clipShape(Capsule())
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -281,32 +281,19 @@ struct CardListView: View {
                         }
                         
                         ForEach(tags.sorted(by: { $0.name < $1.name }), id: \.id) { tag in
-                            let isSelected = selectedTags.contains(where: { $0.id == tag.id })
-                            let tagColor = Color.fromName(tag.color)
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(tagColor)
-                                    .frame(width: 8, height: 8)
-                                Text(tag.name)
-                                if tag.cards.count > 0 {
-                                    Text("\(tag.cards.count)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(isSelected ? tagColor.opacity(0.2) : Color(.systemGray6))
-                            .clipShape(Capsule())
-                            .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    if isSelected {
-                                        selectedTags.removeAll { $0.id == tag.id }
-                                    } else {
-                                        selectedTags.append(tag)
+                            TagFilterItem(
+                                tag: tag,
+                                isSelected: selectedTags.contains(where: { $0.id == tag.id }),
+                                action: {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        if selectedTags.contains(where: { $0.id == tag.id }) {
+                                            selectedTags.removeAll { $0.id == tag.id }
+                                        } else {
+                                            selectedTags.append(tag)
+                                        }
                                     }
                                 }
-                            }
+                            )
                         }
                     }
                 }
