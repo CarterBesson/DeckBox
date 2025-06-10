@@ -38,8 +38,8 @@ struct CardListView: View {
     /// Controls visibility of the card scanner
     @State private var isScanning = false
     
-    /// Currently selected tag for filtering
-    @State private var selectedTag: Tag? = nil
+    /// Currently selected tags for filtering. Cards must contain all selected tags to be shown.
+    @State private var selectedTags: [Tag] = []
     
     /// Current search text
     @State private var searchText = ""
@@ -58,16 +58,23 @@ struct CardListView: View {
     
     // MARK: - Computed Properties
     
-    /// Returns filtered cards based on selected tag, group type, and search text
+    /// Returns filtered cards based on selected tags, group type, and search text
     private var filteredCards: [Card] {
         // If a group type is selected, we don't show any cards
         guard selectedGroupType == nil else {
             return []
         }
 
-        // Then filter by selected tag
-        let tagFiltered = selectedTag == nil ? cards : cards.filter {
-            $0.tags.contains(where: { $0.id == selectedTag?.id })
+        // Then filter by selected tags (cards must contain all selected tags)
+        let tagFiltered: [Card]
+        if selectedTags.isEmpty {
+            tagFiltered = cards
+        } else {
+            tagFiltered = cards.filter { card in
+                selectedTags.allSatisfy { tag in
+                    card.tags.contains(where: { $0.id == tag.id })
+                }
+            }
         }
 
         // Finally, filter by search text if any
@@ -170,11 +177,11 @@ struct CardListView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(selectedTag == nil ? Color.mtgBlue.opacity(0.2) : Color(.systemGray6))
+                .background(selectedTags.isEmpty ? Color.mtgBlue.opacity(0.2) : Color(.systemGray6))
                 .clipShape(Capsule())
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        selectedTag = nil
+                        selectedTags.removeAll()
                     }
                 }
                 
@@ -191,7 +198,7 @@ struct CardListView: View {
                         }
                         
                         ForEach(tags.sorted(by: { $0.name < $1.name }), id: \.id) { tag in
-                            let isSelected = selectedTag?.id == tag.id
+                            let isSelected = selectedTags.contains(where: { $0.id == tag.id })
                             let tagColor = Color.fromName(tag.color)
                             HStack(spacing: 4) {
                                 Circle()
@@ -210,7 +217,11 @@ struct CardListView: View {
                             .clipShape(Capsule())
                             .onTapGesture {
                                 withAnimation(.easeInOut(duration: 0.2)) {
-                                    selectedTag = isSelected ? nil : tag
+                                    if isSelected {
+                                        selectedTags.removeAll { $0.id == tag.id }
+                                    } else {
+                                        selectedTags.append(tag)
+                                    }
                                 }
                             }
                         }
