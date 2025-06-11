@@ -12,6 +12,13 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - View Mode
+/// Enum to control whether cards are displayed in a list or grid
+private enum ViewMode {
+    case list
+    case grid
+}
+
 // MARK: - Tag Filter Item View
 /// A single tag item in the filter bar
 private struct TagFilterItem: View {
@@ -94,6 +101,108 @@ private struct CardListItem: View {
     }
 }
 
+// MARK: - Card Grid Item View
+/// A single card item in the grid
+private struct CardGridItem: View {
+    let card: Card
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.modelContext) private var modelContext
+    
+    // Cache expensive computations
+    private let imageHeight: CGFloat = 200
+    private let cornerRadius: CGFloat = 8
+    private let maxTagsShown = 3
+    
+    private var tagView: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(card.tags.prefix(maxTagsShown)), id: \.id) { tag in
+                Circle()
+                    .fill(Color.fromName(tag.color))
+                    .frame(width: 8, height: 8)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.tagBorder(colorName: tag.color, colorScheme: colorScheme), lineWidth: 1)
+                    )
+            }
+            if card.tags.count > maxTagsShown {
+                Text("+\(card.tags.count - maxTagsShown)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+    
+    private var cardImage: some View {
+        Group {
+            if let url = card.imageURL {
+                GeometryReader { geometry in
+                    AsyncImage(
+                        url: url,
+                        transaction: Transaction(animation: .none)
+                    ) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                        default:
+                            Color.gray.opacity(0.3)
+                        }
+                    }
+                }
+                .aspectRatio(CGSize(width: 5, height: 7), contentMode: .fit)
+                .cornerRadius(cornerRadius)
+            } else {
+                Color.gray.opacity(0.3)
+                    .aspectRatio(CGSize(width: 5, height: 7), contentMode: .fit)
+                    .cornerRadius(cornerRadius)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+    
+    private var quantityBadge: some View {
+        Group {
+            if card.quantity > 1 {
+                Text("×\(card.quantity)")
+                    .font(.caption)
+                    .padding(4)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(4)
+                    .padding(4)
+            }
+        }
+    }
+    
+    var body: some View {
+        NavigationLink(value: card) {
+            VStack(alignment: .leading, spacing: 4) {
+                cardImage
+                    .overlay(alignment: .topTrailing) {
+                        quantityBadge
+                    }
+                
+                Text(card.name)
+                    .font(.headline)
+                    .lineLimit(1)
+                
+                tagView
+                    .padding(.bottom, 4)
+            }
+            .background(Color(.systemGray6).opacity(0.5))
+            .cornerRadius(10)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) {
+                modelContext.delete(card)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+}
+
 struct CardListView: View {
     // MARK: - Properties
     
@@ -111,6 +220,9 @@ struct CardListView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     // MARK: - View State
+    
+    /// Current view mode (list or grid)
+    @State private var viewMode: ViewMode = .list
     
     /// Navigation path for programmatic navigation
     @State private var navigationPath = NavigationPath()
@@ -339,8 +451,8 @@ struct CardListView: View {
                 Divider()
                 
                 // Card List or Group List
-                List {
-                    if let type = selectedGroupType {
+                if let type = selectedGroupType {
+                    List {
                         // Show groups for the selected type
                         ForEach(filteredGroups) { group in
                             NavigationLink(value: group) {
@@ -359,12 +471,41 @@ struct CardListView: View {
                                 }
                             }
                         }
-                    } else {
-                        // Show cards in library
-                        ForEach(filteredCards) { card in
-                            CardListItem(card: card)
+                    }
+                } else {
+                    // Show cards in library
+                    Group {
+                        switch viewMode {
+                        case .list:
+                            List {
+                                ForEach(filteredCards) { card in
+                                    CardListItem(card: card)
+                                }
+                                .onDelete(perform: delete)
+                            }
+                        case .grid:
+                            ScrollView {
+                                LazyVGrid(
+                                    columns: [
+                                        GridItem(.adaptive(minimum: 160, maximum: 200), spacing: 16)
+                                    ],
+                                    spacing: 16
+                                ) {
+                                    ForEach(filteredCards) { card in
+                                        CardGridItem(card: card)
+                                            .id(card.id)
+                                            .frame(maxWidth: .infinity)
+                                            .drawingGroup()
+                                    }
+                                }
+                                .padding()
+                            }
+                            .scrollIndicators(.hidden)
+                            .animation(.none, value: filteredCards)
+                            .transaction { transaction in
+                                transaction.animation = nil
+                            }
                         }
-                        .onDelete(perform: delete)
                     }
                 }
                 
@@ -376,10 +517,20 @@ struct CardListView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if selectedGroupType == nil {
-                        NavigationLink {
-                            TagManagementView()
-                        } label: {
-                            Label("Manage Tags", systemImage: "tag")
+                        HStack {
+                            Button {
+                                withAnimation {
+                                    viewMode = viewMode == .list ? .grid : .list
+                                }
+                            } label: {
+                                Image(systemName: viewMode == .list ? "square.grid.2x2" : "list.bullet")
+                            }
+                            
+                            NavigationLink {
+                                TagManagementView()
+                            } label: {
+                                Label("Manage Tags", systemImage: "tag")
+                            }
                         }
                     }
                 }
