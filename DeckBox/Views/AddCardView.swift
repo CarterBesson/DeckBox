@@ -21,14 +21,23 @@ struct AddCardView: View {
     /// Name of the card to add
     @State private var cardName = ""
     
+    /// Text for bulk upload
+    @State private var bulkUploadText = ""
+    
     /// Loading state during API requests
     @State private var isLoading = false
     
     /// Error message to display if the card lookup fails
     @State private var errorMsg: String?
+    
+    /// Progress for bulk upload
+    @State private var progress: (current: Int, total: Int)?
 
     /// Focus state for the card name text field
     @FocusState private var isCardNameFocused: Bool
+    
+    /// Whether we're in bulk upload mode
+    @State private var isBulkMode = false
 
     /// Service for fetching card data from external APIs
     let service: CardDataService = ScryfallService()
@@ -36,17 +45,46 @@ struct AddCardView: View {
     var body: some View {
         NavigationStack {
             Form {
-                // Card name input section
-                Section("Card Name") {
-                    TextField("e.g. Black Lotus", text: $cardName)
-                        .autocapitalization(.words)
-                        .onSubmit {
-                            if !cardName.trimmingCharacters(in: .whitespaces).isEmpty && !isLoading {
-                                Task { await addCard() }
+                // Mode selection
+                Section {
+                    Picker("Mode", selection: $isBulkMode) {
+                        Text("Single Card").tag(false)
+                        Text("Bulk Upload").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                
+                if isBulkMode {
+                    // Bulk upload section
+                    Section("Bulk Upload") {
+                        TextEditor(text: $bulkUploadText)
+                            .frame(height: 200)
+                        Text("Enter one card name per line")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        if let progress = progress {
+                            ProgressView(
+                                value: Double(progress.current),
+                                total: Double(progress.total)
+                            ) {
+                                Text("Processing \(progress.current) of \(progress.total)")
                             }
                         }
-                        .submitLabel(.done)
-                        .focused($isCardNameFocused)
+                    }
+                } else {
+                    // Single card input section
+                    Section("Card Name") {
+                        TextField("e.g. Black Lotus", text: $cardName)
+                            .autocapitalization(.words)
+                            .onSubmit {
+                                if !cardName.trimmingCharacters(in: .whitespaces).isEmpty && !isLoading {
+                                    Task { await addCard() }
+                                }
+                            }
+                            .submitLabel(.done)
+                            .focused($isCardNameFocused)
+                    }
                 }
                 
                 // Error message display
@@ -54,7 +92,7 @@ struct AddCardView: View {
                     Section { Text(error).foregroundColor(.red) }
                 }
             }
-            .navigationTitle("Add a Card")
+            .navigationTitle("Add Cards")
             .toolbar {
                 // Cancel button
                 ToolbarItem(placement: .cancellationAction) {
@@ -64,7 +102,13 @@ struct AddCardView: View {
                 // Add button with loading state
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        Task { await addCard() }
+                        Task {
+                            if isBulkMode {
+                                await addBulkCards()
+                            } else {
+                                await addCard()
+                            }
+                        }
                     } label: {
                         if isLoading {
                             ProgressView()
@@ -72,11 +116,19 @@ struct AddCardView: View {
                             Text("Add")
                         }
                     }
-                    .disabled(cardName.trimmingCharacters(in: .whitespaces).isEmpty || isLoading)
+                    .disabled(
+                        isLoading || (isBulkMode ? 
+                            bulkUploadText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty :
+                            cardName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    )
                 }
             }
             .onAppear {
-                isCardNameFocused = true
+                isCardNameFocused = !isBulkMode
+            }
+            .onChange(of: isBulkMode) { _, newValue in
+                isCardNameFocused = !newValue
+                errorMsg = nil
             }
         }
     }
@@ -85,7 +137,6 @@ struct AddCardView: View {
     /// 1. Fetches card data from the external service
     /// 2. Creates a new Card entity with the fetched data
     /// 3. Inserts the card into the database
-    /// 4. Dismisses the view on success or shows error on failure
     private func addCard() async {
         isLoading = true
         errorMsg = nil
@@ -99,6 +150,56 @@ struct AddCardView: View {
             errorMsg = error.localizedDescription
         }
         isLoading = false
+    }
+    
+    /// Attempts to add multiple cards to the library from bulk input
+    /// Respects Scryfall's rate limit and shows progress
+    private func addBulkCards() async {
+        isLoading = true
+        errorMsg = nil
+        
+        // Split input into lines and filter empty ones
+        let cardNames = bulkUploadText
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        
+        guard !cardNames.isEmpty else {
+            errorMsg = "No valid card names found"
+            isLoading = false
+            return
+        }
+        
+        progress = (0, cardNames.count)
+        var failedCards: [(name: String, error: String)] = []
+        
+        for (index, name) in cardNames.enumerated() {
+            do {
+                let dto = try await service.fetchCard(named: name)
+                let card = Card(from: dto, modelContext: context)
+                context.insert(card)
+                progress = (index + 1, cardNames.count)
+                
+                // Add a small delay to respect rate limit
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+            } catch {
+                failedCards.append((name, error.localizedDescription))
+            }
+        }
+        
+        // Show summary of failures if any
+        if !failedCards.isEmpty {
+            errorMsg = "Failed to add \(failedCards.count) cards:\n" + 
+                failedCards.map { "• \($0.name): \($0.error)" }.joined(separator: "\n")
+        }
+        
+        isLoading = false
+        progress = nil
+        
+        // Only dismiss if all cards were added successfully
+        if failedCards.isEmpty {
+            dismiss()
+        }
     }
 }
 
