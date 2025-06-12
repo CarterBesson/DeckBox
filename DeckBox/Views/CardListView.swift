@@ -230,7 +230,7 @@ struct CardListView: View {
     // MARK: - View State
     
     /// Current view mode (list or grid)
-    @State private var viewMode: ViewMode = .list
+    @State private var viewMode: ViewMode = .grid
     
     /// Navigation path for programmatic navigation
     @State private var navigationPath = NavigationPath()
