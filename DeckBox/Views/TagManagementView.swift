@@ -29,18 +29,29 @@ struct TagManagementView: View {
     
     var body: some View {
         List {
-            Section {
-                ForEach(allTags, id: \.name) { tag in
-                    TagRowView(tag: tag)
-                        .onTapGesture {
-                            selectedTag = tag
+            // Group tags by category
+            ForEach(Dictionary(grouping: allTags) { $0.category ?? "" }.sorted(by: { $0.key < $1.key }), id: \.key) { category, tags in
+                Section(category.isEmpty ? "Uncategorized" : category) {
+                    ForEach(tags.sorted(by: { $0.name < $1.name })) { tag in
+                        TagRowView(tag: tag)
+                            .onTapGesture {
+                                selectedTag = tag
+                            }
+                    }
+                    .onDelete { indices in
+                        for index in indices {
+                            modelContext.delete(tags[index])
                         }
+                    }
                 }
-                .onDelete(perform: deleteTags)
             }
         }
-        .navigationTitle("Manage Tags")
+        .navigationTitle("Tags")
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                EditButton()
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     isAddingTag = true
@@ -56,13 +67,13 @@ struct TagManagementView: View {
             TagEditorView(mode: .edit(tag))
         }
     }
-    
-    /// Deletes tags at the specified indices
-    private func deleteTags(at offsets: IndexSet) {
-        for index in offsets {
-            modelContext.delete(allTags[index])
-        }
+}
+
+#Preview {
+    NavigationStack {
+        TagManagementView()
     }
+    .modelContainer(for: Tag.self, inMemory: true)
 }
 
 // MARK: - Tag Row View
