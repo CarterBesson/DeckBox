@@ -146,7 +146,10 @@ struct ScryfallService: CardDataService {
                 
                 // Create and execute the API request
                 let url = URL(string: "https://api.scryfall.com/cards/named?fuzzy=\(query)")!
-                let (data, response) = try await session.data(from: url)
+                var request = URLRequest(url: url)
+                request.setValue("DeckBox/1.0 (https://github.com/carterbesson/deckbox; carterbesson@email.com)", forHTTPHeaderField: "User-Agent")
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                let (data, response) = try await session.data(for: request)
                 
                 // Handle HTTP status codes
                 if let httpResponse = response as? HTTPURLResponse {
