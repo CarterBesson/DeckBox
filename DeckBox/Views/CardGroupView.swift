@@ -57,6 +57,7 @@ struct CardGroupView: View {
                     Image(systemName: "pencil")
                         .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain)
             } else {
                 Button {
                     selectedGroupType = type
@@ -65,6 +66,7 @@ struct CardGroupView: View {
                     Image(systemName: "plus")
                         .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal)
@@ -119,6 +121,9 @@ struct CardGroupView: View {
         .listStyle(.plain)
         .navigationTitle("Groups")
         .navigationBarTitleDisplayMode(.large)
+        .navigationDestination(for: CardGroup.self) { group in
+            CardGroupDetailView(group: group)
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 EditButton()
