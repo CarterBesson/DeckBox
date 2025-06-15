@@ -133,18 +133,40 @@ struct AddCardView: View {
         }
     }
     
+    /// Helper function to find an existing card in the database
+    /// - Parameters:
+    ///   - name: The name of the card to find
+    ///   - setCode: The set code of the card to find
+    /// - Returns: The existing card if found, nil otherwise
+    private func findExistingCard(name: String, setCode: String) -> Card? {
+        let descriptor = FetchDescriptor<Card>(
+            predicate: #Predicate<Card> { card in
+                card.name == name && card.setCode == setCode
+            }
+        )
+        return try? context.fetch(descriptor).first
+    }
+    
     /// Attempts to add a new card to the library
     /// 1. Fetches card data from the external service
-    /// 2. Creates a new Card entity with the fetched data
-    /// 3. Inserts the card into the database
+    /// 2. Creates a new Card entity with the fetched data or updates existing one
+    /// 3. Inserts the card into the database if it's new
     private func addCard() async {
         isLoading = true
         errorMsg = nil
         do {
             let dto = try await service.fetchCard(named: cardName)
-            let card = Card(from: dto, modelContext: context)
-            context.insert(card)
-            newlyAddedCard = card
+            
+            if let existingCard = findExistingCard(name: dto.name, setCode: dto.set) {
+                // Card exists, increment quantity
+                existingCard.quantity += 1
+                newlyAddedCard = existingCard
+            } else {
+                // Card doesn't exist, create new one
+                let card = Card(from: dto, modelContext: context)
+                context.insert(card)
+                newlyAddedCard = card
+            }
             dismiss()
         } catch {
             errorMsg = error.localizedDescription
@@ -176,8 +198,16 @@ struct AddCardView: View {
         for (index, name) in cardNames.enumerated() {
             do {
                 let dto = try await service.fetchCard(named: name)
-                let card = Card(from: dto, modelContext: context)
-                context.insert(card)
+                
+                if let existingCard = findExistingCard(name: dto.name, setCode: dto.set) {
+                    // Card exists, increment quantity
+                    existingCard.quantity += 1
+                } else {
+                    // Card doesn't exist, create new one
+                    let card = Card(from: dto, modelContext: context)
+                    context.insert(card)
+                }
+                
                 progress = (index + 1, cardNames.count)
                 
                 // Add a small delay to respect rate limit
@@ -191,15 +221,10 @@ struct AddCardView: View {
         if !failedCards.isEmpty {
             errorMsg = "Failed to add \(failedCards.count) cards:\n" + 
                 failedCards.map { "• \($0.name): \($0.error)" }.joined(separator: "\n")
-        }
-        
-        isLoading = false
-        progress = nil
-        
-        // Only dismiss if all cards were added successfully
-        if failedCards.isEmpty {
+        } else {
             dismiss()
         }
+        isLoading = false
     }
 }
 
