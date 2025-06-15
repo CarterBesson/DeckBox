@@ -49,7 +49,6 @@ struct ContentView: View {
         .tag(Tab.search)
         .tabItem {
             Label("Search", systemImage: "magnifyingglass")
-                .labelStyle(.iconOnly)
         }
     }
     
@@ -73,6 +72,24 @@ enum Tab: Hashable {
     case groups
     case tags
     case search
+}
+
+// MARK: - Search Tab View
+struct SearchTabView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Binding var selectedTab: Tab
+    
+    var body: some View {
+        NavigationStack {
+            SearchView()
+                .navigationTitle("Search")
+                .navigationBarTitleDisplayMode(.large)
+        }
+        .tag(Tab.search)
+        .tabItem {
+            Label("Search", systemImage: "magnifyingglass")
+        }
+    }
 }
 
 #Preview {
