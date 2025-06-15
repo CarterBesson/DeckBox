@@ -96,6 +96,12 @@ final class Card{
     /// Card-group relationship will be nullified when card is deleted
     @Relationship(deleteRule: .nullify) var groups: [CardGroup] = []
     
+    /// The layout of the card (e.g., "normal", "split", "transform")
+    var layout: String = "normal"
+    
+    /// The faces of a double-sided card
+    var faces: [CardFace] = []
+    
     /// Creates a new Card instance with the specified properties
     /// - Parameters:
     ///   - game: The game this card belongs to
@@ -121,6 +127,8 @@ final class Card{
     ///   - keywords: Keywords present on the card (optional)
     ///   - legalities: Legality in various formats (optional)
     ///   - tags: Array of tags associated with the card (optional)
+    ///   - layout: The layout of the card (optional)
+    ///   - faces: The faces of a double-sided card (optional)
     init(game: String,
          name: String,
          setCode: String? = nil,
@@ -143,7 +151,9 @@ final class Card{
          colors: [String] = [],
          keywords: [String] = [],
          legalities: [String: String] = [:],
-         tags: [Tag] = []) {
+         tags: [Tag] = [],
+         layout: String = "normal",
+         faces: [CardFace] = []) {
         self.game = game
         self.name = name
         self.setCode = setCode
@@ -167,6 +177,73 @@ final class Card{
         self.keywords = keywords
         self.legalities = legalities
         self.tags = tags
+        self.layout = layout
+        self.faces = faces
         self.lastUpdated = Date()
+    }
+}
+
+/// Represents a single face of a double-sided card
+@Model
+final class CardFace {
+    /// Unique identifier for the face
+    @Attribute(.unique) var id: UUID = UUID()
+    
+    /// The name of this face
+    var name: String
+    
+    /// URL to the face's image
+    var imageURL: URL?
+    
+    /// The face's mana cost
+    var manaCost: String?
+    
+    /// The type line of the face
+    var typeLine: String
+    
+    /// The oracle text of the face
+    var oracleText: String?
+    
+    /// The flavor text of the face
+    var flavorText: String?
+    
+    /// Power, if the face is a creature
+    var power: String?
+    
+    /// Toughness, if the face is a creature
+    var toughness: String?
+    
+    /// Loyalty, if the face is a planeswalker
+    var loyalty: String?
+    
+    /// The face's artist
+    var artist: String?
+    
+    /// The face's colors
+    var colors: [String]
+    
+    /// Creates a new CardFace instance
+    init(name: String,
+         imageURL: URL? = nil,
+         manaCost: String? = nil,
+         typeLine: String,
+         oracleText: String? = nil,
+         flavorText: String? = nil,
+         power: String? = nil,
+         toughness: String? = nil,
+         loyalty: String? = nil,
+         artist: String? = nil,
+         colors: [String] = []) {
+        self.name = name
+        self.imageURL = imageURL
+        self.manaCost = manaCost
+        self.typeLine = typeLine
+        self.oracleText = oracleText
+        self.flavorText = flavorText
+        self.power = power
+        self.toughness = toughness
+        self.loyalty = loyalty
+        self.artist = artist
+        self.colors = colors
     }
 }

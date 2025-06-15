@@ -80,6 +80,12 @@ struct CardDTO: Decodable {
     
     /// Legality in various formats (standard, modern, etc)
     let legalities: [String: String]
+    
+    /// Whether this card has multiple faces
+    let card_faces: [CardFaceDTO]?
+    
+    /// The layout of the card (e.g., "normal", "split", "transform")
+    let layout: String
 
     enum CodingKeys: String, CodingKey {
         case name, set, collector_number, image_uris
@@ -87,8 +93,44 @@ struct CardDTO: Decodable {
         case flavor_text, power, toughness, loyalty
         case rarity, set_name, reserved
         case artist, color_identity, colors, keywords
-        case legalities
+        case legalities, card_faces, layout
     }
+}
+
+/// Data transfer object for a single face of a double-sided card
+struct CardFaceDTO: Decodable {
+    /// The name of this face
+    let name: String
+    
+    /// Dictionary of available card images at different sizes
+    let image_uris: [String: URL]?
+    
+    /// The card's mana cost
+    let mana_cost: String?
+    
+    /// The type line of the card
+    let type_line: String
+    
+    /// The oracle text of the card
+    let oracle_text: String?
+    
+    /// The flavor text of the card
+    let flavor_text: String?
+    
+    /// Power, if the card is a creature
+    let power: String?
+    
+    /// Toughness, if the card is a creature
+    let toughness: String?
+    
+    /// Loyalty, if the card is a planeswalker
+    let loyalty: String?
+    
+    /// The card's artist
+    let artist: String?
+    
+    /// The card's colors
+    let colors: [String]?
 }
 
 // MARK: - Scryfall Rate Limiter
@@ -204,6 +246,27 @@ extension Card {
     /// - Parameter dto: The data transfer object containing card data
     /// - Parameter modelContext: The SwiftData model context for creating tags
     convenience init(from dto: CardDTO, modelContext: ModelContext) {
+        // For double-sided cards, use the first face's data for the main card
+        let isDoubleSided = dto.card_faces != nil && !dto.card_faces!.isEmpty
+        
+        // Create the faces if this is a double-sided card
+        let faces = isDoubleSided ? dto.card_faces!.map { face in
+            CardFace(
+                name: face.name,
+                imageURL: face.image_uris?["normal"],
+                manaCost: face.mana_cost,
+                typeLine: face.type_line,
+                oracleText: face.oracle_text,
+                flavorText: face.flavor_text,
+                power: face.power,
+                toughness: face.toughness,
+                loyalty: face.loyalty,
+                artist: face.artist,
+                colors: face.colors ?? []
+            )
+        } : []
+        
+        // Initialize the card with the first face's data if it's double-sided
         self.init(
             game: "MTG",
             name: dto.name,
@@ -211,23 +274,25 @@ extension Card {
             setName: dto.set_name,
             collectorNumber: dto.collector_number,
             quantity: 1,
-            imageURL: dto.image_uris?["normal"],
-            manaCost: dto.mana_cost,
+            imageURL: isDoubleSided ? faces.first?.imageURL : dto.image_uris?["normal"],
+            manaCost: isDoubleSided ? faces.first?.manaCost : dto.mana_cost,
             cmc: dto.cmc,
-            typeLine: dto.type_line,
-            oracleText: dto.oracle_text,
-            flavorText: dto.flavor_text,
-            power: dto.power,
-            toughness: dto.toughness,
-            loyalty: dto.loyalty,
+            typeLine: isDoubleSided ? faces.first?.typeLine ?? "" : dto.type_line,
+            oracleText: isDoubleSided ? faces.first?.oracleText : dto.oracle_text,
+            flavorText: isDoubleSided ? faces.first?.flavorText : dto.flavor_text,
+            power: isDoubleSided ? faces.first?.power : dto.power,
+            toughness: isDoubleSided ? faces.first?.toughness : dto.toughness,
+            loyalty: isDoubleSided ? faces.first?.loyalty : dto.loyalty,
             rarity: dto.rarity,
             isReserved: dto.reserved,
-            artist: dto.artist,
+            artist: isDoubleSided ? faces.first?.artist : dto.artist,
             colorIdentity: dto.color_identity,
-            colors: dto.colors ?? [],
+            colors: isDoubleSided ? faces.first?.colors ?? [] : dto.colors ?? [],
             keywords: dto.keywords,
             legalities: dto.legalities,
-            tags: []
+            tags: [],
+            layout: dto.layout,
+            faces: faces
         )
         
         // Automatically add tags based on card attributes

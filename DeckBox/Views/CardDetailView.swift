@@ -17,7 +17,20 @@ struct CardDetailView: View {
     @Bindable var card: Card             // SwiftData auto–bindable
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
-
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingDeleteConfirmation = false
+    @State private var showingTagSheet = false
+    @State private var selectedFaceIndex: Int = 0
+    
+    private var isDoubleSided: Bool {
+        card.layout == "transform" || card.layout == "modal_dfc" || card.layout == "split"
+    }
+    
+    private var currentFace: CardFace? {
+        guard isDoubleSided, !card.faces.isEmpty else { return nil }
+        return card.faces[selectedFaceIndex]
+    }
+    
     // MARK: - View State
     
     /// Controls visibility of the add tag sheet
@@ -29,16 +42,63 @@ struct CardDetailView: View {
     /// Displays the card's image if available
     /// Shows a placeholder if the image is loading or unavailable
     private var cardImageSection: some View {
-        Group {
-            if let url = card.imageURL {
-                AsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .scaledToFit()
+        VStack {
+            if isDoubleSided {
+                VStack {
+                    if let url = currentFace?.imageURL {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                            default:
+                                Color.gray.opacity(0.3)
+                            }
+                        }
                         .cornerRadius(8)
-                } placeholder: {
-                    Color.gray.opacity(0.3)
-                        .frame(height: 200)
+                    }
+                    
+                    HStack {
+                        Button(action: { 
+                            withAnimation {
+                                selectedFaceIndex = (selectedFaceIndex - 1 + card.faces.count) % card.faces.count
+                            }
+                        }) {
+                            Image(systemName: "arrow.left.circle.fill")
+                                .font(.title)
+                        }
+                        .disabled(card.faces.count <= 1)
+                        
+                        Text("\(selectedFaceIndex + 1)/\(card.faces.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        Button(action: { 
+                            withAnimation {
+                                selectedFaceIndex = (selectedFaceIndex + 1) % card.faces.count
+                            }
+                        }) {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.title)
+                        }
+                        .disabled(card.faces.count <= 1)
+                    }
+                    .padding(.top, 8)
+                }
+            } else {
+                if let url = card.imageURL {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                        default:
+                            Color.gray.opacity(0.3)
+                        }
+                    }
+                    .cornerRadius(8)
                 }
             }
         }
@@ -181,74 +241,77 @@ struct CardDetailView: View {
 
     var body: some View {
         ScrollView {
-            cardImageSection
-
-            VStack(alignment: .leading, spacing: 12) {
-                // Card name and mana cost
-                HStack {
-                    Text(card.name)
-                        .font(.title2)
-                        .bold()
-                    Spacer()
-                    if let manaCost = card.manaCost {
-                        Text(manaCost)
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                cardImageSection
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    // Card name and mana cost
+                    HStack {
+                        Text(currentFace?.name ?? card.name)
+                            .font(.title2)
+                            .bold()
+                        Spacer()
+                        if let manaCost = currentFace?.manaCost {
+                            Text(manaCost)
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                }
-
-                // Type line
-                Text(card.typeLine)
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-
-                // Set information
-                HStack {
-                    if let setName = card.setName {
-                        Text(setName)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if let collectorNumber = card.collectorNumber {
-                        Text("#\(collectorNumber)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                // Oracle text
-                if let oracleText = card.oracleText {
-                    Text(oracleText)
-                        .padding(.vertical, 4)
-                }
-
-                // Flavor text
-                if let flavorText = card.flavorText {
-                    Text(flavorText)
-                        .italic()
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 4)
-                }
-
-                // Power/Toughness or Loyalty
-                if let power = card.power, let toughness = card.toughness {
-                    Text("\(power)/\(toughness)")
+                    
+                    // Type line
+                    Text(currentFace?.typeLine ?? card.typeLine)
                         .font(.headline)
-                } else if let loyalty = card.loyalty {
-                    Text("Loyalty: \(loyalty)")
-                        .font(.headline)
-                }
-
-                // Artist credit
-                if let artist = card.artist {
-                    Text("Illustrated by \(artist)")
-                        .font(.caption)
                         .foregroundStyle(.secondary)
+                    
+                    // Set information
+                    HStack {
+                        if let setName = card.setName {
+                            Text(setName)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if let collectorNumber = card.collectorNumber {
+                            Text("#\(collectorNumber)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    // Oracle text
+                    if let oracleText = currentFace?.oracleText {
+                        Text(oracleText)
+                            .padding(.vertical, 4)
+                    }
+                    
+                    // Flavor text
+                    if let flavorText = currentFace?.flavorText {
+                        Text(flavorText)
+                            .italic()
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 4)
+                    }
+                    
+                    // Power/Toughness or Loyalty
+                    if let power = currentFace?.power,
+                       let toughness = currentFace?.toughness {
+                        Text("\(power)/\(toughness)")
+                            .font(.headline)
+                    } else if let loyalty = currentFace?.loyalty {
+                        Text("Loyalty: \(loyalty)")
+                            .font(.headline)
+                    }
+                    
+                    // Artist credit
+                    if let artist = currentFace?.artist {
+                        Text("Illustrated by \(artist)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-
+                
                 Divider()
-
+                
                 // Card details section
                 Group {
                     // Rarity and Reserved List status
@@ -262,7 +325,7 @@ struct CardDetailView: View {
                                 .font(.subheadline)
                         }
                     }
-
+                    
                     // Colors and Color Identity
                     if !card.colors.isEmpty {
                         Text("Colors: \(card.colors.joined(separator: ", "))")
@@ -272,13 +335,13 @@ struct CardDetailView: View {
                         Text("Color Identity: \(card.colorIdentity.joined(separator: ", "))")
                             .font(.subheadline)
                     }
-
+                    
                     // Keywords
                     if !card.keywords.isEmpty {
                         Text("Keywords: \(card.keywords.joined(separator: ", "))")
                             .font(.subheadline)
                     }
-
+                    
                     // Legalities
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Format Legality:")
@@ -297,14 +360,14 @@ struct CardDetailView: View {
                     }
                     .padding(.vertical, 4)
                 }
-
+                
                 Divider()
-
+                
                 // Quantity stepper
                 Stepper("Quantity: \(card.quantity)",
                         value: $card.quantity,
                         in: 1...99)
-
+                
                 // Tags section
                 tagsSection
             }
@@ -314,6 +377,28 @@ struct CardDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isAddingTag) {
             addTagSheet
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+        .alert("Delete Card", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                modelContext.delete(card)
+                dismiss()
+            }
+        } message: {
+            Text("Are you sure you want to delete this card?")
         }
     }
 }
