@@ -226,7 +226,7 @@ struct CardGroupDetailView: View {
         .navigationTitle(group.name)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(for: Card.self) { card in
-            CardDetailView(card: card)
+            CardDetailRouter(card: card)
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -260,8 +260,30 @@ struct CardGroupDetailView: View {
 private struct CardSelectionRowView: View {
     let card: Card
     let group: CardGroup
-    let remainingQuantity: Int
     @Binding var selectedQuantities: [UUID: Int]
+    @Environment(\.colorScheme) private var colorScheme
+    
+    private var ownedQuantity: Int {
+        card.quantity
+    }
+    
+    private var groupQuantity: Int {
+        group.quantity(for: card)
+    }
+    
+    private var maxQuantity: Int {
+        ownedQuantity + groupQuantity
+    }
+    
+    private var ownershipStatus: (text: String, color: Color) {
+        if ownedQuantity == 0 {
+            return ("Not owned", .red)
+        } else if groupQuantity >= ownedQuantity {
+            return ("All copies in use", .orange)
+        } else {
+            return ("\(ownedQuantity - groupQuantity) available", .green)
+        }
+    }
     
     var body: some View {
         HStack {
@@ -271,36 +293,34 @@ private struct CardSelectionRowView: View {
                     Text(card.name)
                     CardTagDisplay(tags: card.tags)
                 }
-                Text("Library: ×\(card.quantity) • In Group: ×\(group.quantity(for: card))")
+                Text(ownershipStatus.text)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ownershipStatus.color)
             }
             
             Spacer()
             
-            if remainingQuantity > 0 {
-                // Quantity selection controls
-                Stepper(
-                    value: Binding(
-                        get: { selectedQuantities[card.id] ?? 1 },
-                        set: { selectedQuantities[card.id] = $0 }
-                    ),
-                    in: 1...remainingQuantity
-                ) {
-                    Text("\(selectedQuantities[card.id] ?? 1)")
-                        .monospacedDigit()
-                        .frame(minWidth: 25)
-                }
-                
-                // Add button
-                Button {
-                    let quantity = selectedQuantities[card.id] ?? 1
-                    group.setQuantity(group.quantity(for: card) + quantity, for: card)
-                    selectedQuantities[card.id] = 1 // Reset quantity
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundStyle(.blue)
-                }
+            // Quantity selection controls
+            Stepper(
+                value: Binding(
+                    get: { selectedQuantities[card.id] ?? 1 },
+                    set: { selectedQuantities[card.id] = $0 }
+                ),
+                in: 1...maxQuantity
+            ) {
+                Text("\(selectedQuantities[card.id] ?? 1)")
+                    .monospacedDigit()
+                    .frame(minWidth: 25)
+            }
+            
+            // Add button
+            Button {
+                let quantity = selectedQuantities[card.id] ?? 1
+                group.setQuantity(group.quantity(for: card) + quantity, for: card)
+                selectedQuantities[card.id] = 1 // Reset quantity
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundStyle(.blue)
             }
         }
     }
@@ -308,47 +328,186 @@ private struct CardSelectionRowView: View {
 
 // MARK: - Card Selection View
 /// A view that allows users to select and add cards to a group.
-/// Includes search functionality and quantity selection for each card.
+/// Includes search functionality, quantity selection for each card, and bulk import.
 struct CardSelectionView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Card.name) private var allCards: [Card]
     var group: CardGroup
     @State private var searchText = ""
     @State private var selectedQuantities: [UUID: Int] = [:]
+    @State private var isBulkMode = false
+    @State private var bulkText = ""
+    @State private var isImporting = false
+    @State private var importProgress: (current: Int, total: Int)?
+    @State private var importError: String?
+    @State private var importedCards: [(card: Card, quantity: Int, owned: Bool)] = []
     
-    /// Filters cards based on search text and availability
+    /// Filters cards based on search text
     private var filteredCards: [Card] {
         if searchText.isEmpty {
-            return allCards.filter { card in
-                let remaining = card.quantity - group.quantity(for: card)
-                return remaining > 0
-            }
+            return allCards
         }
         return allCards.filter { card in
-            let remaining = card.quantity - group.quantity(for: card)
-            return remaining > 0 && card.name.localizedCaseInsensitiveContains(searchText)
+            card.name.localizedCaseInsensitiveContains(searchText)
         }
     }
     
-    var body: some View {
-        List {
-            ForEach(filteredCards) { card in
-                let remainingQuantity = card.quantity - group.quantity(for: card)
-                CardSelectionRowView(
-                    card: card,
-                    group: group,
-                    remainingQuantity: remainingQuantity,
-                    selectedQuantities: $selectedQuantities
-                )
+    /// Parses a deck list text into card names and quantities
+    private func parseDeckList(_ text: String) -> [(name: String, quantity: Int)] {
+        let lines = text.components(separatedBy: .newlines)
+        var cards: [(name: String, quantity: Int)] = []
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            
+            // Try to match patterns like "2 Card Name" or "2x Card Name"
+            let components = trimmed.components(separatedBy: .whitespaces)
+            if components.count >= 2 {
+                let quantityStr = components[0].trimmingCharacters(in: CharacterSet(charactersIn: "xX"))
+                if let quantity = Int(quantityStr) {
+                    let name = components.dropFirst().joined(separator: " ")
+                    cards.append((name: name, quantity: quantity))
+                }
             }
         }
-        .searchable(text: $searchText, prompt: "Search cards...")
-        .navigationTitle("Add Cards")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done") {
-                    dismiss()
+        
+        return cards
+    }
+    
+    /// Imports cards from a deck list
+    private func importDeckList() async {
+        let cards = parseDeckList(bulkText)
+        importProgress = (0, cards.count)
+        importedCards = []
+        
+        for (index, cardInfo) in cards.enumerated() {
+            do {
+                // First check if we already have this card in our collection
+                let existingCard = allCards.first { $0.name.lowercased() == cardInfo.name.lowercased() }
+                
+                if let existingCard = existingCard {
+                    // Card exists in collection, just add it to the group
+                    group.setQuantity(group.quantity(for: existingCard) + cardInfo.quantity, for: existingCard)
+                    importedCards.append((card: existingCard, quantity: cardInfo.quantity, owned: existingCard.quantity > 0))
+                } else {
+                    // Card doesn't exist, fetch it and add to collection
+                    let dto = try await ScryfallService().fetchCard(named: cardInfo.name)
+                    let card = Card(from: dto, modelContext: modelContext)
+                    modelContext.insert(card)
+                    group.setQuantity(cardInfo.quantity, for: card)
+                    importedCards.append((card: card, quantity: cardInfo.quantity, owned: false))
+                }
+                
+                importProgress = (index + 1, cards.count)
+            } catch {
+                importError = "Failed to import \(cardInfo.name): \(error.localizedDescription)"
+                break
+            }
+        }
+        
+        isImporting = false
+    }
+    
+    var body: some View {
+        NavigationStack {
+            if isBulkMode {
+                Form {
+                    Section {
+                        TextEditor(text: $bulkText)
+                            .frame(minHeight: 200)
+                    } header: {
+                        Text("Paste Deck List")
+                    } footer: {
+                        Text("Enter one card per line with quantity (e.g., '2 Lightning Bolt' or '2x Lightning Bolt')")
+                    }
+                    
+                    if let progress = importProgress {
+                        Section {
+                            ProgressView(value: Double(progress.current), total: Double(progress.total)) {
+                                Text("Importing cards...")
+                            }
+                            Text("\(progress.current) of \(progress.total) cards imported")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    if !importedCards.isEmpty {
+                        Section("Imported Cards") {
+                            ForEach(importedCards, id: \.card.id) { item in
+                                HStack {
+                                    Text(item.card.name)
+                                    Spacer()
+                                    Text("×\(item.quantity)")
+                                        .foregroundStyle(.secondary)
+                                    if !item.owned {
+                                        Text("Not owned")
+                                            .font(.caption)
+                                            .foregroundStyle(.red)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if let error = importError {
+                        Section {
+                            Text(error)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+                .navigationTitle("Bulk Import")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Import") {
+                            isImporting = true
+                            Task {
+                                await importDeckList()
+                            }
+                        }
+                        .disabled(bulkText.isEmpty || isImporting)
+                    }
+                }
+            } else {
+                List {
+                    ForEach(filteredCards) { card in
+                        CardSelectionRowView(
+                            card: card,
+                            group: group,
+                            selectedQuantities: $selectedQuantities
+                        )
+                    }
+                }
+                .searchable(text: $searchText, prompt: "Search cards...")
+                .navigationTitle("Add Cards")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            isBulkMode = true
+                        } label: {
+                            Label("Bulk Import", systemImage: "text.badge.plus")
+                        }
+                    }
                 }
             }
         }

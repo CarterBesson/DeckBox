@@ -459,7 +459,7 @@ struct CardListView: View {
             )
         }
         .navigationDestination(for: Card.self) { card in
-            CardDetailView(card: card)
+            CardDetailRouter(card: card)
         }
     }
 

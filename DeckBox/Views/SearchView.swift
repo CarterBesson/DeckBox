@@ -45,14 +45,7 @@ struct SearchView: View {
         }
         .searchable(text: $searchText, prompt: "Search cards...")
         .navigationDestination(for: Card.self) { card in
-            CardDetailView(card: card)
+            CardDetailRouter(card: card)
         }
     }
 }
-
-#Preview {
-    NavigationStack {
-        SearchView()
-    }
-    .modelContainer(for: Card.self, inMemory: true)
-} 
