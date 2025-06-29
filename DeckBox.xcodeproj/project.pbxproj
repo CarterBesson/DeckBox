@@ -29,9 +29,22 @@
 		AD5916DF2DE2BF1700D273B1 /* DeckBoxUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DeckBoxUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AD01BE3F2E10AFFB0006D191 /* Exceptions for "DeckBox" folder in "DeckBox" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Views/CardDetailView/CardDetailView.swift,
+			);
+			target = AD5916C42DE2BF1500D273B1 /* DeckBox */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AD5916C72DE2BF1500D273B1 /* DeckBox */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AD01BE3F2E10AFFB0006D191 /* Exceptions for "DeckBox" folder in "DeckBox" target */,
+			);
 			path = DeckBox;
 			sourceTree = "<group>";
 		};
