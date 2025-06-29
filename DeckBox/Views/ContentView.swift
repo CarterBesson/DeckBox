@@ -5,89 +5,40 @@
 import SwiftUI
 import SwiftData
 
-struct ContentView: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var selectedTab = Tab.library
-    
-    @ViewBuilder
-    private var tabContent: some View {
-        NavigationStack {
-            CardListView()
-                .navigationTitle("Library")
-                .navigationBarTitleDisplayMode(.large)
-        }
-        .tag(Tab.library)
-        .tabItem {
-            Label("Library", systemImage: "books.vertical")
-        }
-        
-        NavigationStack {
-            CardGroupView()
-                .navigationTitle("Groups")
-                .navigationBarTitleDisplayMode(.large)
-        }
-        .tag(Tab.groups)
-        .tabItem {
-            Label("Groups", systemImage: "folder")
-        }
-        
-        NavigationStack {
-            TagManagementView()
-                .navigationTitle("Tags")
-                .navigationBarTitleDisplayMode(.large)
-        }
-        .tag(Tab.tags)
-        .tabItem {
-            Label("Tags", systemImage: "tag")
-        }
-        
-        NavigationStack {
-            SearchView()
-                .navigationTitle("Search")
-                .navigationBarTitleDisplayMode(.large)
-        }
-        .tag(Tab.search)
-        .tabItem {
-            Label("Search", systemImage: "magnifyingglass")
-        }
-    }
-    
+struct ContentView: View {    
     var body: some View {
-        if horizontalSizeClass == .regular {
-            TabView(selection: $selectedTab) {
-                tabContent
+        TabView {
+            Tab("Library", systemImage: "books.vertical") {
+                NavigationStack {
+                    CardListView()
+                        .navigationTitle("Library")
+                        .navigationBarTitleDisplayMode(.large)
+                }
             }
-            .tabViewStyle(.sidebarAdaptable)
-        } else {
-            TabView(selection: $selectedTab) {
-                tabContent
+            
+            Tab("Groups", systemImage: "folder") {
+                NavigationStack {
+                    CardGroupView()
+                        .navigationTitle("Groups")
+                        .navigationBarTitleDisplayMode(.large)
+                }
             }
-        }
-    }
-}
-
-// MARK: - Tab Items
-enum Tab: Hashable {
-    case library
-    case groups
-    case tags
-    case search
-}
-
-// MARK: - Search Tab View
-struct SearchTabView: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Binding var selectedTab: Tab
-    
-    var body: some View {
-        NavigationStack {
-            SearchView()
-                .navigationTitle("Search")
-                .navigationBarTitleDisplayMode(.large)
-        }
-        .tag(Tab.search)
-        .tabItem {
-            Label("Search", systemImage: "magnifyingglass")
+            
+            Tab("Tags", systemImage: "tag") {
+                NavigationStack {
+                    TagManagementView()
+                        .navigationTitle("Tags")
+                        .navigationBarTitleDisplayMode(.large)
+                }
+            }
+            
+            Tab(role: .search) {
+                NavigationStack {
+                    SearchView()
+                        .navigationTitle("Search")
+                        .navigationBarTitleDisplayMode(.large)
+                }
+            }
         }
     }
 }
