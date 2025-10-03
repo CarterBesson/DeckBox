@@ -98,6 +98,13 @@ private struct CardListItem: View {
                 Label("Delete", systemImage: "trash")
             }
         }
+        .contextMenu {
+            Button(role: .destructive) {
+                modelContext.delete(card)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 }
 
@@ -134,7 +141,7 @@ private struct CardGridItem: View {
     
     private var cardImage: some View {
         Group {
-            if let url = card.imageURL {
+            if let url = card.imageURL ?? card.faces.first?.imageURL {
                 GeometryReader { geometry in
                     AsyncImage(
                         url: url,
@@ -264,6 +271,10 @@ struct CardListView: View {
     
     /// Selected group type in Groups tab for filtering
     @State private var selectedGroupTypeInGroups: GroupType? = nil
+
+    /// Batch scanning counters/recents
+    @State private var batchScanCount: Int = 0
+    @State private var lastScannedNames: [String] = []
 
     // MARK: - Computed Properties
     
@@ -409,7 +420,7 @@ struct CardListView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     withAnimation {
                         viewMode = viewMode == .list ? .grid : .list
@@ -418,45 +429,99 @@ struct CardListView: View {
                     Image(systemName: viewMode == .list ? "square.grid.2x2" : "list.bullet")
                 }
             }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Button {
-                isAdding = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .frame(width: 60, height: 60)
-                    .background(Color.accentColor)
-                    .clipShape(Circle())
-                    .shadow(radius: 4, y: 2)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isScanning = true
+                } label: {
+                    Image(systemName: "camera")
+                }
             }
-            .padding(.trailing, 15)
-            .padding(.bottom, 15)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isAdding = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
         }
         .sheet(isPresented: $isAdding) {
             AddCardView(newlyAddedCard: $newlyAddedCard)
         }
         .sheet(isPresented: $isScanning) {
-            CardScannerView(
-                onScannedText: { scannedName in
-                    Task {
-                        do {
-                            let dto = try await ScryfallService().fetchCard(named: scannedName)
-                            let card = Card(from: dto, modelContext: modelContext)
-                            modelContext.insert(card)
-                            newlyAddedCard = card
-                            isScanning = false
-                        } catch {
-                            print("Lookup failed: \(error)")
+            ZStack(alignment: .top) {
+                // Batch scanning mode: keep the scanner alive and stream cards as they're seen
+                CardScannerView(
+                    batchMode: true,
+                    onCardFound: { scannedName in
+                        // Upsert by name: increment quantity if it exists, otherwise create
+                        Task { @MainActor in
+                            do {
+                                if let existing = try CardLibraryManager.consolidateCards(named: scannedName, in: modelContext) {
+                                    existing.quantity += 1
+                                    existing.lastUpdated = Date()
+                                } else {
+                                    let dto = try await ScryfallService().fetchCard(named: scannedName)
+                                    _ = try CardLibraryManager.upsertCard(from: dto, in: modelContext)
+                                }
+                            } catch {
+                                print("Lookup failed: \(error)")
+                                return
+                            }
+
+                            // Update UI counters
+                            batchScanCount += 1
+                            lastScannedNames.insert(scannedName, at: 0)
+                            if lastScannedNames.count > 5 { lastScannedNames.removeLast(lastScannedNames.count - 5) }
                         }
+                    },
+                    onScannedText: { _ in }, // unused in batch flow
+                    onFinish: {
+                        isScanning = false
                     }
-                },
-                onFinish: {
-                    isScanning = false
+                )
+
+                // Lightweight HUD
+                VStack(spacing: 8) {
+                    HStack {
+                        Label("\(batchScanCount) added", systemImage: "checkmark.circle")
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                        Spacer()
+                        Button {
+                            isScanning = false
+                        } label: {
+                            Text("Done")
+                                .font(.headline)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .accessibilityLabel("Done")
+                    }
+                    .padding(.top, 12)
+                    .padding(.horizontal)
+
+                    if !lastScannedNames.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(lastScannedNames.prefix(3), id: \.self) { name in
+                                Text(name)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(Capsule())
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    Spacer()
                 }
-            )
+            }
         }
         .navigationDestination(for: Card.self) { card in
             CardDetailRouter(card: card)
@@ -495,7 +560,7 @@ struct CardListView: View {
             .listStyle(.sidebar)
             .navigationTitle("Groups")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         isAddingGroup = true
                     } label: {
@@ -614,8 +679,7 @@ private struct AddButton: View {
                 do {
                     // Replace with a prompt or scan result later
                     let dto = try await service.fetchCard(named: "Black Lotus")
-                    let card = Card(from: dto, modelContext: ctx)
-                    ctx.insert(card)
+                    _ = try CardLibraryManager.upsertCard(from: dto, in: ctx)
                 } catch {
                     // Show an alert on failure
                     print("Lookup failed: \(error.localizedDescription)")

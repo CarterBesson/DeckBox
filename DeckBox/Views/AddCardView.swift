@@ -133,49 +133,28 @@ struct AddCardView: View {
         }
     }
     
-    /// Helper function to find an existing card in the database
-    /// - Parameters:
-    ///   - name: The name of the card to find
-    ///   - setCode: The set code of the card to find
-    /// - Returns: The existing card if found, nil otherwise
-    private func findExistingCard(name: String, setCode: String) -> Card? {
-        let descriptor = FetchDescriptor<Card>(
-            predicate: #Predicate<Card> { card in
-                card.name == name && card.setCode == setCode
-            }
-        )
-        return try? context.fetch(descriptor).first
-    }
-    
     /// Attempts to add a new card to the library
     /// 1. Fetches card data from the external service
     /// 2. Creates a new Card entity with the fetched data or updates existing one
     /// 3. Inserts the card into the database if it's new
+    @MainActor
     private func addCard() async {
         isLoading = true
         errorMsg = nil
         do {
             let dto = try await service.fetchCard(named: cardName)
-            
-            if let existingCard = findExistingCard(name: dto.name, setCode: dto.set) {
-                // Card exists, increment quantity
-                existingCard.quantity += 1
-                newlyAddedCard = existingCard
-            } else {
-                // Card doesn't exist, create new one
-                let card = Card(from: dto, modelContext: context)
-                context.insert(card)
-                newlyAddedCard = card
-            }
+            let card = try CardLibraryManager.upsertCard(from: dto, in: context)
+            newlyAddedCard = card
             dismiss()
         } catch {
             errorMsg = error.localizedDescription
         }
         isLoading = false
     }
-    
+
     /// Attempts to add multiple cards to the library from bulk input
     /// Respects Scryfall's rate limit and shows progress
+    @MainActor
     private func addBulkCards() async {
         isLoading = true
         errorMsg = nil
@@ -198,18 +177,10 @@ struct AddCardView: View {
         for (index, name) in cardNames.enumerated() {
             do {
                 let dto = try await service.fetchCard(named: name)
-                
-                if let existingCard = findExistingCard(name: dto.name, setCode: dto.set) {
-                    // Card exists, increment quantity
-                    existingCard.quantity += 1
-                } else {
-                    // Card doesn't exist, create new one
-                    let card = Card(from: dto, modelContext: context)
-                    context.insert(card)
-                }
-                
+                _ = try CardLibraryManager.upsertCard(from: dto, in: context)
+
                 progress = (index + 1, cardNames.count)
-                
+
                 // Add a small delay to respect rate limit
                 try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
             } catch {

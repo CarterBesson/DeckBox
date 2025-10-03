@@ -72,6 +72,9 @@ class CardGroup {
     @Relationship(deleteRule: .nullify, inverse: \GroupType.groups)
     var type: GroupType?
     
+    /// The deck format for this group, if this is a deck (e.g., Standard, Modern, Commander)
+    var deckFormat: DeckFormat?
+    
     /// Cards that are part of this group
     /// Many-to-many relationship with Card model
     @Relationship(deleteRule: .nullify, inverse: \Card.groups)

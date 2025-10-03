@@ -242,18 +242,52 @@ struct ScryfallService: CardDataService {
 
 // MARK: - Card Model Extensions
 extension Card {
-    /// Creates a new Card instance from a CardDTO
-    /// - Parameter dto: The data transfer object containing card data
-    /// - Parameter modelContext: The SwiftData model context for creating tags
-    convenience init(from dto: CardDTO, modelContext: ModelContext) {
-        // For double-sided cards, use the first face's data for the main card
-        let isDoubleSided = dto.card_faces != nil && !dto.card_faces!.isEmpty
-        
-        // Create the faces if this is a double-sided card
-        let faces = isDoubleSided ? dto.card_faces!.map { face in
-            CardFace(
+    // MARK: - Resolved metadata helpers
+    struct ResolvedFaceData {
+        let name: String
+        let imageURL: URL?
+        let manaCost: String?
+        let typeLine: String
+        let oracleText: String?
+        let flavorText: String?
+        let power: String?
+        let toughness: String?
+        let loyalty: String?
+        let artist: String?
+        let colors: [String]
+    }
+
+    struct ResolvedCardData {
+        let imageURL: URL?
+        let faces: [ResolvedFaceData]
+        let manaCost: String?
+        let typeLine: String
+        let oracleText: String?
+        let flavorText: String?
+        let power: String?
+        let toughness: String?
+        let loyalty: String?
+        let artist: String?
+        let colors: [String]
+    }
+
+    private static let imagePreferenceOrder = [
+        "normal",
+        "large",
+        "png",
+        "border_crop",
+        "art_crop",
+        "small"
+    ]
+
+    static func resolvedData(from dto: CardDTO) -> ResolvedCardData {
+        let cardLevelImage = preferredImageURL(from: dto.image_uris)
+
+        let faceData: [ResolvedFaceData] = (dto.card_faces ?? []).map { face in
+            let faceImage = preferredImageURL(from: face.image_uris, fallback: cardLevelImage)
+            return ResolvedFaceData(
                 name: face.name,
-                imageURL: face.image_uris?["normal"],
+                imageURL: faceImage,
                 manaCost: face.mana_cost,
                 typeLine: face.type_line,
                 oracleText: face.oracle_text,
@@ -264,9 +298,101 @@ extension Card {
                 artist: face.artist,
                 colors: face.colors ?? []
             )
-        } : []
-        
-        // Initialize the card with the first face's data if it's double-sided
+        }
+
+        let primaryFace = faceData.first
+        let resolvedImage = preferredImageURL(from: dto.image_uris, fallback: primaryFace?.imageURL)
+
+        return ResolvedCardData(
+            imageURL: resolvedImage,
+            faces: faceData,
+            manaCost: primaryFace?.manaCost ?? dto.mana_cost,
+            typeLine: primaryFace?.typeLine ?? dto.type_line,
+            oracleText: primaryFace?.oracleText ?? dto.oracle_text,
+            flavorText: primaryFace?.flavorText ?? dto.flavor_text,
+            power: primaryFace?.power ?? dto.power,
+            toughness: primaryFace?.toughness ?? dto.toughness,
+            loyalty: primaryFace?.loyalty ?? dto.loyalty,
+            artist: primaryFace?.artist ?? dto.artist,
+            colors: primaryFace?.colors ?? dto.colors ?? []
+        )
+    }
+
+    private static func preferredImageURL(from dictionary: [String: URL]?, fallback: URL? = nil) -> URL? {
+        guard let dictionary = dictionary else { return fallback }
+        for key in imagePreferenceOrder {
+            if let url = dictionary[key] {
+                return url
+            }
+        }
+        return fallback
+    }
+
+    private static func applyResolvedFaces(_ faces: [ResolvedFaceData], to card: Card) {
+        if faces.isEmpty {
+            card.faces.removeAll()
+            return
+        }
+
+        // Trim any extra stored faces beyond what we received from Scryfall
+        while card.faces.count > faces.count {
+            card.faces.removeLast()
+        }
+
+        for (index, face) in faces.enumerated() {
+            if index < card.faces.count {
+                let existing = card.faces[index]
+                existing.name = face.name
+                existing.imageURL = face.imageURL
+                existing.manaCost = face.manaCost
+                existing.typeLine = face.typeLine
+                existing.oracleText = face.oracleText
+                existing.flavorText = face.flavorText
+                existing.power = face.power
+                existing.toughness = face.toughness
+                existing.loyalty = face.loyalty
+                existing.artist = face.artist
+                existing.colors = face.colors
+            } else {
+                let newFace = CardFace(
+                    name: face.name,
+                    imageURL: face.imageURL,
+                    manaCost: face.manaCost,
+                    typeLine: face.typeLine,
+                    oracleText: face.oracleText,
+                    flavorText: face.flavorText,
+                    power: face.power,
+                    toughness: face.toughness,
+                    loyalty: face.loyalty,
+                    artist: face.artist,
+                    colors: face.colors
+                )
+                card.faces.append(newFace)
+            }
+        }
+    }
+
+    /// Creates a new Card instance from a CardDTO
+    /// - Parameter dto: The data transfer object containing card data
+    /// - Parameter modelContext: The SwiftData model context for creating tags
+    convenience init(from dto: CardDTO, modelContext: ModelContext) {
+        let resolved = Card.resolvedData(from: dto)
+        let faces = resolved.faces.map { face in
+            CardFace(
+                name: face.name,
+                imageURL: face.imageURL,
+                manaCost: face.manaCost,
+                typeLine: face.typeLine,
+                oracleText: face.oracleText,
+                flavorText: face.flavorText,
+                power: face.power,
+                toughness: face.toughness,
+                loyalty: face.loyalty,
+                artist: face.artist,
+                colors: face.colors
+            )
+        }
+
         self.init(
             game: "MTG",
             name: dto.name,
@@ -274,27 +400,27 @@ extension Card {
             setName: dto.set_name,
             collectorNumber: dto.collector_number,
             quantity: 1,
-            imageURL: isDoubleSided ? faces.first?.imageURL : dto.image_uris?["normal"],
-            manaCost: isDoubleSided ? faces.first?.manaCost : dto.mana_cost,
+            imageURL: resolved.imageURL,
+            manaCost: resolved.manaCost,
             cmc: dto.cmc,
-            typeLine: isDoubleSided ? faces.first?.typeLine ?? "" : dto.type_line,
-            oracleText: isDoubleSided ? faces.first?.oracleText : dto.oracle_text,
-            flavorText: isDoubleSided ? faces.first?.flavorText : dto.flavor_text,
-            power: isDoubleSided ? faces.first?.power : dto.power,
-            toughness: isDoubleSided ? faces.first?.toughness : dto.toughness,
-            loyalty: isDoubleSided ? faces.first?.loyalty : dto.loyalty,
+            typeLine: resolved.typeLine,
+            oracleText: resolved.oracleText,
+            flavorText: resolved.flavorText,
+            power: resolved.power,
+            toughness: resolved.toughness,
+            loyalty: resolved.loyalty,
             rarity: dto.rarity,
             isReserved: dto.reserved,
-            artist: isDoubleSided ? faces.first?.artist : dto.artist,
+            artist: resolved.artist,
             colorIdentity: dto.color_identity,
-            colors: isDoubleSided ? faces.first?.colors ?? [] : dto.colors ?? [],
+            colors: resolved.colors,
             keywords: dto.keywords,
             legalities: dto.legalities,
             tags: [],
             layout: dto.layout,
             faces: faces
         )
-        
+
         // Automatically add tags based on card attributes
         if dto.reserved {
             addReservedListTag(modelContext: modelContext)
@@ -354,5 +480,22 @@ extension Card {
             modelContext.insert(tag)
             tags.append(tag)
         }
+    }
+
+    static func applyResolvedData(_ resolved: ResolvedCardData, to card: Card) {
+        if let imageURL = resolved.imageURL {
+            card.imageURL = imageURL
+        }
+        card.manaCost = resolved.manaCost
+        card.typeLine = resolved.typeLine
+        card.oracleText = resolved.oracleText
+        card.flavorText = resolved.flavorText
+        card.power = resolved.power
+        card.toughness = resolved.toughness
+        card.loyalty = resolved.loyalty
+        card.artist = resolved.artist
+        card.colors = resolved.colors
+
+        applyResolvedFaces(resolved.faces, to: card)
     }
 }

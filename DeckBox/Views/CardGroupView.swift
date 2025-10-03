@@ -1,278 +1,286 @@
-// MARK: - Card Group View
-/// Main view for managing card groups (decks, cubes, etc.) and their types.
-/// Provides functionality for creating, editing, and organizing different types of card collections.
+// MARK: - Groups View (Unified)
+// Shows all card groups (decks, cubes, etc.) in one place with grid/list toggle
+// Uses a representative card from each group for the visual preview.
 
 import SwiftUI
 import SwiftData
 
-struct CardGroupView: View {
-    // MARK: - Properties
-    
-    /// SwiftData model context for database operations
+// MARK: - Local View Mode (mirrors CardListView style)
+private enum GroupsViewMode { case list, grid }
+
+extension DeckFormat: Identifiable {
+    var id: Self { self }
+    var displayName: String {
+        switch self {
+        case .standard: return "Standard"
+        case .pioneer: return "Pioneer"
+        case .modern: return "Modern"
+        case .legacy: return "Legacy"
+        case .vintage: return "Vintage"
+        case .pauper: return "Pauper"
+        case .commander: return "Commander"
+        case .generic: return "Other"
+        }
+    }
+}
+
+// MARK: - Group Row (List)
+private struct GroupListItem: View {
+    let group: CardGroup
     @Environment(\.modelContext) private var modelContext
-    
-    /// All group types in the system, sorted by name
-    @Query(sort: \GroupType.name) private var groupTypes: [GroupType]
-    
-    /// Current edit mode state (active/inactive)
-    @State private var editMode = EditMode.inactive
-    
-    // MARK: - View State
-    
-    /// Controls visibility of the add group type sheet
-    @State private var isAddingType = false
-    
-    /// Controls visibility of the add group sheet
-    @State private var isAddingGroup = false
-    
-    /// Currently selected group type when adding a new group
-    @State private var selectedGroupType: GroupType?
-    
-    /// Name input for new group
-    @State private var newGroupName = ""
-    
-    /// Name input for new group type
-    @State private var newTypeName = ""
-    
-    /// Icon selection for new group type
-    @State private var newTypeIcon = "folder"
-    
-    /// Group type being edited (if any)
-    @State private var editingType: GroupType?
-    
-    // MARK: - Helper Views
-    
-    /// Creates the header view for a group type section
-    /// - Parameter type: The group type to create the header for
-    /// - Returns: A view containing the type's name, icon, and add button
-    private func headerView(for type: GroupType) -> some View {
-        HStack {
-            Label(type.name, systemImage: type.iconName)
-                .font(.headline)
-            Spacer()
-            if editMode == .active {
-                Button {
-                    editingType = type
-                } label: {
-                    Image(systemName: "pencil")
-                        .foregroundStyle(.secondary)
+
+    private var representativeCard: Card? {
+        group.cards.first(where: { ($0.imageURL ?? $0.faces.first?.imageURL) != nil }) ?? group.cards.first
+    }
+
+    private var thumbnail: some View {
+        Group {
+            if let url = representativeCard?.imageURL ?? representativeCard?.faces.first?.imageURL {
+                AsyncImage(url: url, transaction: Transaction(animation: .none)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        Color.gray.opacity(0.3)
+                    }
                 }
-                .buttonStyle(.plain)
             } else {
-                Button {
-                    selectedGroupType = type
-                    isAddingGroup = true
-                } label: {
-                    Image(systemName: "plus")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
+                Color.gray.opacity(0.3)
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(Color(.systemBackground))
+        .frame(width: 48, height: 64)
+        .clipped()
+        .cornerRadius(6)
     }
-    
-    // MARK: - Body
-    
+
     var body: some View {
-        List {
-            ForEach(groupTypes) { type in
-                Section {
-                    // Empty state for groups
-                    if type.groups.isEmpty {
-                        VStack {
-                            Text("No \(type.name) yet")
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.vertical, 16)
-                        }
-                        .listRowInsets(EdgeInsets())
-                        .background(Color.clear)
-                        .listRowSeparator(.hidden)
-                    } else {
-                        // List of groups for this type
-                        ForEach(type.groups) { group in
-                            NavigationLink(value: group) {
-                                HStack {
-                                    Label(group.name, systemImage: type.iconName)
-                                    Spacer()
-                                    Text("\(group.cards.count)")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(.leading, 20)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    modelContext.delete(group)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
+        NavigationLink(value: group) {
+            HStack(spacing: 12) {
+                thumbnail
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.name)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text("\(group.cards.count) \(group.cards.count == 1 ? "card" : "cards")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                modelContext.delete(group)
+            } label: { Label("Delete", systemImage: "trash") }
+        }
+        .contextMenu {
+            Button(role: .destructive) {
+                modelContext.delete(group)
+            } label: { Label("Delete", systemImage: "trash") }
+        }
+    }
+}
+
+// MARK: - Group Tile (Grid)
+private struct GroupGridItem: View {
+    let group: CardGroup
+    @Environment(\.modelContext) private var modelContext
+
+    private let cornerRadius: CGFloat = 10
+
+    private var representativeCard: Card? {
+        group.cards.first(where: { ($0.imageURL ?? $0.faces.first?.imageURL) != nil }) ?? group.cards.first
+    }
+
+    private var cover: some View {
+        Group {
+            if let url = representativeCard?.imageURL ?? representativeCard?.faces.first?.imageURL {
+                GeometryReader { _ in
+                    AsyncImage(url: url, transaction: Transaction(animation: .none)) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().aspectRatio(contentMode: .fit)
+                        default:
+                            Color.gray.opacity(0.3)
                         }
                     }
-                } header: {
-                    headerView(for: type)
-                        .padding(.horizontal, -16)
+                }
+                .aspectRatio(CGSize(width: 5, height: 7), contentMode: .fit)
+            } else {
+                Color.gray.opacity(0.3)
+                    .aspectRatio(CGSize(width: 5, height: 7), contentMode: .fit)
+            }
+        }
+        .cornerRadius(cornerRadius)
+    }
+
+    var body: some View {
+        NavigationLink(value: group) {
+            VStack(alignment: .leading, spacing: 6) {
+                cover
+                Text(group.name)
+                    .font(.headline)
+                    .lineLimit(2)
+                Text("\(group.cards.count) \(group.cards.count == 1 ? "card" : "cards")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(6)
+            .background(Color(UIColor.systemGray6).opacity(0.6))
+            .cornerRadius(cornerRadius)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) {
+                modelContext.delete(group)
+            } label: { Label("Delete", systemImage: "trash") }
+        }
+    }
+}
+
+// MARK: - Main Groups View
+struct CardGroupView: View {
+    // MARK: Queries
+    /// All groups across all types
+    @Query(sort: \CardGroup.name) private var groups: [CardGroup]
+    /// All group types (used when creating a new group)
+    @Query(sort: \GroupType.name) private var groupTypes: [GroupType]
+
+    // MARK: Environment
+    @Environment(\.modelContext) private var modelContext
+
+    // MARK: State
+    @State private var viewMode: GroupsViewMode = .grid
+    @State private var isAddingGroup = false
+    @State private var newGroupName = ""
+    @State private var selectedTypeForNewGroup: GroupType?
+    @State private var selectedDeckFormat: DeckFormat = .standard
+
+    // MARK: Body
+    var body: some View {
+        Group {
+            switch viewMode {
+            case .list:
+                List {
+                    ForEach(groups) { group in
+                        GroupListItem(group: group)
+                    }
+                }
+            case .grid:
+                ScrollView {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 160, maximum: 200), spacing: 16)],
+                        spacing: 16
+                    ) {
+                        ForEach(groups) { group in
+                            GroupGridItem(group: group)
+                                .id(group.id)
+                        }
+                    }
+                    .padding()
                 }
             }
         }
-        .listStyle(.plain)
         .navigationTitle("Groups")
         .navigationBarTitleDisplayMode(.large)
         .navigationDestination(for: CardGroup.self) { group in
             CardGroupDetailView(group: group)
         }
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                EditButton()
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    withAnimation { viewMode = (viewMode == .list) ? .grid : .list }
+                } label: {
+                    Image(systemName: viewMode == .list ? "square.grid.2x2" : "list.bullet")
+                }
             }
-            ToolbarItem(placement: .primaryAction) {
-                if editMode != .active {
-                    Button {
-                        isAddingType = true
-                    } label: {
-                        Label("Add Type", systemImage: "plus")
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    if selectedTypeForNewGroup == nil {
+                        selectedTypeForNewGroup = groupTypes.first(where: { $0.name == "Decks" }) ?? groupTypes.first
                     }
+                    isAddingGroup = true
+                } label: {
+                    Image(systemName: "plus")
                 }
             }
         }
-        .environment(\.editMode, $editMode)
         .onAppear {
-            // Create built-in types if they don't exist
+            // Ensure built-in types exist for creation flow
             if groupTypes.isEmpty {
-                for type in GroupType.builtInTypes {
-                    modelContext.insert(type)
-                }
+                for type in GroupType.builtInTypes { modelContext.insert(type) }
             }
         }
-        // MARK: - Add Type Sheet
-        .sheet(isPresented: $isAddingType) {
-            NavigationStack {
-                Form {
-                    TextField("Type Name", text: $newTypeName)
-                    
-                    Picker("Icon", selection: $newTypeIcon) {
-                        Label("Folder", systemImage: "folder")
-                            .tag("folder")
-                        Label("Stack", systemImage: "square.stack")
-                            .tag("square.stack")
-                        Label("List", systemImage: "list.bullet")
-                            .tag("list.bullet")
-                        Label("Collection", systemImage: "square.grid.2x2")
-                            .tag("square.grid.2x2")
-                    }
-                }
-                .navigationTitle("New Group Type")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            resetNewTypeForm()
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Add") {
-                            let type = GroupType(name: newTypeName, iconName: newTypeIcon)
-                            modelContext.insert(type)
-                            resetNewTypeForm()
-                        }
-                        .disabled(newTypeName.isEmpty)
-                    }
-                }
-            }
-        }
-        // MARK: - Add Group Sheet
+        // MARK: Add Group Sheet
         .sheet(isPresented: $isAddingGroup) {
             NavigationStack {
                 Form {
-                    TextField("Name", text: $newGroupName)
-                }
-                .navigationTitle("New \(selectedGroupType?.name.dropLast() ?? "Group")")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            resetNewGroupForm()
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Add") {
-                            if let type = selectedGroupType {
-                                let group = CardGroup(name: newGroupName, type: type)
-                                modelContext.insert(group)
+                    Section(header: Text("Group Details")) {
+                        TextField("Name", text: $newGroupName)
+                        Picker("Type", selection: $selectedTypeForNewGroup) {
+                            ForEach(groupTypes) { type in
+                                Label(type.name, systemImage: type.iconName).tag(Optional(type))
                             }
-                            resetNewGroupForm()
                         }
-                        .disabled(newGroupName.isEmpty)
+                    }
+                    if selectedTypeForNewGroup?.name == "Decks" {
+                        Section(header: Text("Deck Options")) {
+                            Picker("Deck Format", selection: $selectedDeckFormat) {
+                                ForEach(DeckFormat.allCases) { format in
+                                    Text(format.displayName).tag(format)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                        }
                     }
                 }
-            }
-        }
-        // MARK: - Edit Type Sheet
-        .sheet(item: $editingType) { type in
-            NavigationStack {
-                Form {
-                    TextField("Type Name", text: .init(
-                        get: { type.name },
-                        set: { type.name = $0 }
-                    ))
-                    
-                    Picker("Icon", selection: .init(
-                        get: { type.iconName },
-                        set: { type.iconName = $0 }
-                    )) {
-                        Label("Folder", systemImage: "folder")
-                            .tag("folder")
-                        Label("Stack", systemImage: "square.stack")
-                            .tag("square.stack")
-                        Label("List", systemImage: "list.bullet")
-                            .tag("list.bullet")
-                        Label("Collection", systemImage: "square.grid.2x2")
-                            .tag("square.grid.2x2")
-                    }
-                }
-                .navigationTitle("Edit Group Type")
+                .navigationTitle("New Group")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            editingType = nil
+                        Button(action: { resetNewGroupForm() }) {
+                            Image(systemName: "xmark")
                         }
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") {
-                            editingType = nil
+                        Button(action: {
+                            guard let type = selectedTypeForNewGroup else { return }
+
+                            // Create the group
+                            let group = CardGroup(name: newGroupName, type: type)
+
+                            // If this is a Deck, attach the chosen format
+                            if type.name == "Decks" {
+                                // NOTE: Assumes your model has `deckFormat` (DeckFormat or DeckFormat?)
+                                // Adjust the property name if your model differs.
+                                group.deckFormat = selectedDeckFormat
+                            }
+
+                            modelContext.insert(group)
+                            resetNewGroupForm()
+                        }) {
+                            Image(systemName: "checkmark")
                         }
+                        .disabled(newGroupName.isEmpty || selectedTypeForNewGroup == nil)
                     }
                 }
             }
         }
     }
-    
-    // MARK: - Helper Methods
-    
-    /// Resets the new type form and dismisses the sheet
-    private func resetNewTypeForm() {
-        newTypeName = ""
-        newTypeIcon = "folder"
-        isAddingType = false
-    }
-    
-    /// Resets the new group form and dismisses the sheet
+
+    // MARK: Helpers
     private func resetNewGroupForm() {
         newGroupName = ""
-        selectedGroupType = nil
+        selectedTypeForNewGroup = nil
+        selectedDeckFormat = .standard
         isAddingGroup = false
     }
 }
 
-/// Preview provider for CardGroupView
-/// Shows the view within a NavigationStack
+// MARK: - Preview
 #Preview {
     NavigationStack {
         CardGroupView()
     }
-    .modelContainer(for: CardGroup.self, inMemory: true)
+    .modelContainer(for: [CardGroup.self, Card.self, GroupType.self], inMemory: true)
 }

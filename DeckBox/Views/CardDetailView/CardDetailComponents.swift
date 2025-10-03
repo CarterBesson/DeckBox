@@ -12,53 +12,15 @@ struct CardImageSection: View {
     @Bindable var card: Card
     @State private var selectedFaceIndex = 0
     
-    private var isDoubleSided: Bool {
-        card.layout == "transform" || card.layout == "modal_dfc" || card.layout == "split"
-    }
-    
-    private var currentFace: CardFace? {
-        guard isDoubleSided, !card.faces.isEmpty else { return nil }
-        return card.faces[selectedFaceIndex]
-    }
-    
     var body: some View {
+        let faceCount = card.faces.count
+        let hasFaces = faceCount > 0
+        let clampedIndex = hasFaces ? min(selectedFaceIndex, faceCount - 1) : 0
+        let displayedFace = hasFaces ? card.faces[clampedIndex] : nil
+        let imageURL = displayedFace?.imageURL ?? card.imageURL
+
         VStack {
-            if isDoubleSided {
-                // Front / back (or split) image
-                if let url = currentFace?.imageURL {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let img):
-                            img.resizable()
-                               .aspectRatio(contentMode: .fit)
-                        default:
-                            Color.gray.opacity(0.3)
-                        }
-                    }
-                    .cornerRadius(8)
-                }
-
-                // Face‑picker arrows
-                HStack {
-                    Button {
-                        selectedFaceIndex = (selectedFaceIndex - 1 + card.faces.count) % card.faces.count
-                    } label: {
-                        Image(systemName: "arrow.left.circle.fill")
-                    }
-                    .disabled(card.faces.count <= 1)
-
-                    Text("\(selectedFaceIndex + 1)/\(card.faces.count)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Button {
-                        selectedFaceIndex = (selectedFaceIndex + 1) % card.faces.count
-                    } label: {
-                        Image(systemName: "arrow.right.circle.fill")
-                    }
-                    .disabled(card.faces.count <= 1)
-                }
-            } else if let url = card.imageURL {
+            if let url = imageURL {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let img):
@@ -69,7 +31,42 @@ struct CardImageSection: View {
                     }
                 }
                 .cornerRadius(8)
+            } else {
+                Color.gray.opacity(0.3)
+                    .aspectRatio(CGSize(width: 5, height: 7), contentMode: .fit)
+                    .cornerRadius(8)
             }
+
+            if hasFaces {
+                HStack {
+                    Button {
+                        let newIndex = (clampedIndex - 1 + faceCount) % faceCount
+                        selectedFaceIndex = newIndex
+                    } label: {
+                        Image(systemName: "arrow.left.circle.fill")
+                    }
+                    .disabled(faceCount <= 1)
+
+                    Text("\(clampedIndex + 1)/\(faceCount)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        let newIndex = (clampedIndex + 1) % faceCount
+                        selectedFaceIndex = newIndex
+                    } label: {
+                        Image(systemName: "arrow.right.circle.fill")
+                    }
+                    .disabled(faceCount <= 1)
+                }
+            }
+        }
+        .onChange(of: card.faces.count) { _, newCount in
+            guard newCount > 0 else {
+                selectedFaceIndex = 0
+                return
+            }
+            selectedFaceIndex = min(selectedFaceIndex, newCount - 1)
         }
     }
 }

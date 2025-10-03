@@ -15,7 +15,14 @@ import VisionKit
 
 /// A SwiftUI wrapper around UIKit's DataScannerViewController for text recognition
 struct CardScannerView: UIViewControllerRepresentable {
-    /// Callback function when text is recognized and selected
+    /// Whether to run in continuous batch scanning mode.
+    var batchMode: Bool = false
+
+    /// Called every time a card-like text is detected in batch mode.
+    /// If nil, falls back to `onScannedText`.
+    var onCardFound: ((String) -> Void)? = nil
+
+    /// Callback function when text is recognized and selected (non-batch flow)
     /// - Parameter String: The recognized text (card name)
     var onScannedText: (String) -> Void
     
@@ -53,33 +60,69 @@ struct CardScannerView: UIViewControllerRepresentable {
         Coordinator(parent: self)
     }
 
-    /// Coordinator class to handle DataScannerViewController delegate methods
-    /// Manages communication between UIKit scanner and SwiftUI view
     class Coordinator: NSObject, DataScannerViewControllerDelegate {
         /// Reference to the parent view to access callbacks
         let parent: CardScannerView
+        
+        // Deduplication window per recognized name so we don't spam the same card
+        private var lastHitTimes: [String: Date] = [:]
+        private let minInterval: TimeInterval = 1.5
         
         init(parent: CardScannerView) {
             self.parent = parent
         }
 
-        /// Handles user taps on recognized text items
-        /// When text is tapped, passes the recognized text to the callback
-        /// and ends the scanning session
-        func dataScanner(_ dataScanner: DataScannerViewController, didTapOn item: VisionKit.RecognizedItem) {
-            switch item {
-            case .text(let recognizedText):
-                let name = recognizedText.transcript
-                parent.onScannedText(name)
-                dataScanner.stopScanning()
+        private func handleRecognizedText(_ raw: String, scanner: DataScannerViewController) {
+            let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            
+            if parent.batchMode {
+                let now = Date()
+                if let last = lastHitTimes[text], now.timeIntervalSince(last) < minInterval {
+                    return
+                }
+                lastHitTimes[text] = now
+                if let onCardFound = parent.onCardFound {
+                    onCardFound(text)
+                } else {
+                    parent.onScannedText(text)
+                }
+                // Stay in scanning mode for batch flow
+            } else {
+                parent.onScannedText(text)
+                scanner.stopScanning()
                 parent.onFinish()
-            default:
-                break
+            }
+        }
+
+        /// Handles user taps on recognized text items (single-pick flow)
+        func dataScanner(_ dataScanner: DataScannerViewController, didTapOn item: VisionKit.RecognizedItem) {
+            if case .text(let recognizedText) = item {
+                handleRecognizedText(recognizedText.transcript, scanner: dataScanner)
+            }
+        }
+
+        /// Stream new items as they appear (batch flow)
+        func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [VisionKit.RecognizedItem], allItems: [VisionKit.RecognizedItem]) {
+            guard parent.batchMode else { return }
+            for item in addedItems {
+                if case .text(let recognizedText) = item {
+                    handleRecognizedText(recognizedText.transcript, scanner: dataScanner)
+                }
+            }
+        }
+
+        /// Stream updated items as they stabilize (batch flow)
+        func dataScanner(_ dataScanner: DataScannerViewController, didUpdate updatedItems: [VisionKit.RecognizedItem], allItems: [VisionKit.RecognizedItem]) {
+            guard parent.batchMode else { return }
+            for item in updatedItems {
+                if case .text(let recognizedText) = item {
+                    handleRecognizedText(recognizedText.transcript, scanner: dataScanner)
+                }
             }
         }
 
         /// Handles scanning errors
-        /// Stops the scanning session and notifies the parent view
         func dataScanner(_ dataScanner: DataScannerViewController, didFailWithError error: Error) {
             print("DataScanner error: \(error)")
             dataScanner.stopScanning()

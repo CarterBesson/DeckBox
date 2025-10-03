@@ -111,7 +111,7 @@ private struct CardGridItem: View {
     
     private var cardImage: some View {
         Group {
-            if let url = card.imageURL {
+            if let url = card.imageURL ?? card.faces.first?.imageURL {
                 GeometryReader { geometry in
                     AsyncImage(
                         url: url,
@@ -190,6 +190,10 @@ struct CardGroupDetailView: View {
     @State private var isAddingCards = false
     @State private var searchText = ""
     @State private var viewMode: ViewMode = .grid
+    // Scanner state for adding directly to this group
+    @State private var isScanning = false
+    @State private var batchScanCount: Int = 0
+    @State private var lastScannedNames: [String] = []
     
     /// Returns cards in the group sorted alphabetically by name
     private var sortedCards: [Card] {
@@ -238,6 +242,13 @@ struct CardGroupDetailView: View {
                     Image(systemName: viewMode == .list ? "square.grid.2x2" : "list.bullet")
                 }
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    isScanning = true
+                } label: {
+                    Image(systemName: "camera")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     isAddingCards = true
@@ -252,6 +263,85 @@ struct CardGroupDetailView: View {
                 CardSelectionView(group: group)
             }
         }
+        .sheet(isPresented: $isScanning) {
+            ZStack(alignment: .top) {
+                // Keep the scanner alive and stream cards as they're seen
+                CardScannerView(
+                    batchMode: true,
+                    onCardFound: { scannedName in
+                        // Add scanned cards directly to the current group. If the card
+                        // does not exist in the library, create it; otherwise do not
+                        // increase owned quantity, only the group quantity.
+                        Task { @MainActor in
+                            do {
+                                if let existing = try CardLibraryManager.consolidateCards(named: scannedName, in: modelContext) {
+                                    let current = group.quantity(for: existing)
+                                    group.setQuantity(current + 1, for: existing)
+                                } else {
+                                    let dto = try await ScryfallService().fetchCard(named: scannedName)
+                                    let card = try CardLibraryManager.upsertCard(from: dto, in: modelContext)
+                                    group.setQuantity(1, for: card)
+                                }
+                            } catch {
+                                print("Lookup failed: \(error)")
+                                return
+                            }
+
+                            // Update HUD counters
+                            batchScanCount += 1
+                            lastScannedNames.insert(scannedName, at: 0)
+                            if lastScannedNames.count > 5 { lastScannedNames.removeLast(lastScannedNames.count - 5) }
+                        }
+                    },
+                    onScannedText: { _ in }, // unused in batch flow
+                    onFinish: {
+                        isScanning = false
+                    }
+                )
+
+                // HUD overlay
+                VStack(spacing: 8) {
+                    HStack {
+                        Label("\(batchScanCount) added", systemImage: "checkmark.circle")
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                        Spacer()
+                        Button {
+                            isScanning = false
+                        } label: {
+                            Text("Done")
+                                .font(.headline)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .accessibilityLabel("Done")
+                    }
+                    .padding(.top, 12)
+                    .padding(.horizontal)
+
+                    if !lastScannedNames.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(lastScannedNames.prefix(3), id: \.self) { name in
+                                Text(name)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(Capsule())
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    Spacer()
+                }
+            }
+        }
     }
 }
 
@@ -260,68 +350,44 @@ struct CardGroupDetailView: View {
 private struct CardSelectionRowView: View {
     let card: Card
     let group: CardGroup
-    @Binding var selectedQuantities: [UUID: Int]
     @Environment(\.colorScheme) private var colorScheme
-    
-    private var ownedQuantity: Int {
-        card.quantity
-    }
-    
-    private var groupQuantity: Int {
-        group.quantity(for: card)
-    }
-    
-    private var maxQuantity: Int {
-        ownedQuantity + groupQuantity
-    }
-    
-    private var ownershipStatus: (text: String, color: Color) {
-        if ownedQuantity == 0 {
-            return ("Not owned", .red)
-        } else if groupQuantity >= ownedQuantity {
-            return ("All copies in use", .orange)
-        } else {
-            return ("\(ownedQuantity - groupQuantity) available", .green)
-        }
-    }
-    
+
     var body: some View {
         HStack {
-            // Card information section
-            VStack(alignment: .leading) {
-                HStack {
-                    Text(card.name)
-                    CardTagDisplay(tags: card.tags)
-                }
-                Text(ownershipStatus.text)
-                    .font(.caption)
-                    .foregroundStyle(ownershipStatus.color)
-            }
-            
+            // Card name only (no tag indicators)
+            Text(card.name)
+                .lineLimit(1)
+                .font(.headline)
+
             Spacer()
-            
-            // Quantity selection controls
-            Stepper(
-                value: Binding(
-                    get: { selectedQuantities[card.id] ?? 1 },
-                    set: { selectedQuantities[card.id] = $0 }
-                ),
-                in: 1...maxQuantity
-            ) {
-                Text("\(selectedQuantities[card.id] ?? 1)")
+
+            // Direct quantity controls for this group
+            HStack(spacing: 12) {
+                Button {
+                    let current = group.quantity(for: card)
+                    if current > 0 {
+                        group.setQuantity(current - 1, for: card)
+                    }
+                } label: {
+                    Image(systemName: "minus")
+                }
+                .disabled(group.quantity(for: card) == 0)
+
+                Text("\(group.quantity(for: card))")
                     .monospacedDigit()
-                    .frame(minWidth: 25)
+                    .frame(minWidth: 24)
+
+                Button {
+                    let current = group.quantity(for: card)
+                    group.setQuantity(current + 1, for: card)
+                } label: {
+                    Image(systemName: "plus")
+                }
             }
-            
-            // Add button
-            Button {
-                let quantity = selectedQuantities[card.id] ?? 1
-                group.setQuantity(group.quantity(for: card) + quantity, for: card)
-                selectedQuantities[card.id] = 1 // Reset quantity
-            } label: {
-                Image(systemName: "plus.circle.fill")
-                    .foregroundStyle(.blue)
-            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
         }
     }
 }
@@ -335,7 +401,6 @@ struct CardSelectionView: View {
     @Query(sort: \Card.name) private var allCards: [Card]
     var group: CardGroup
     @State private var searchText = ""
-    @State private var selectedQuantities: [UUID: Int] = [:]
     @State private var isBulkMode = false
     @State private var bulkText = ""
     @State private var isImporting = false
@@ -377,6 +442,7 @@ struct CardSelectionView: View {
     }
     
     /// Imports cards from a deck list
+    @MainActor
     private func importDeckList() async {
         let cards = parseDeckList(bulkText)
         importProgress = (0, cards.count)
@@ -386,16 +452,17 @@ struct CardSelectionView: View {
             do {
                 // First check if we already have this card in our collection
                 let existingCard = allCards.first { $0.name.lowercased() == cardInfo.name.lowercased() }
-                
-                if let existingCard = existingCard {
+
+                if let existingCard = existingCard,
+                   let primary = try CardLibraryManager.consolidateCards(named: existingCard.name, in: modelContext) {
                     // Card exists in collection, just add it to the group
-                    group.setQuantity(group.quantity(for: existingCard) + cardInfo.quantity, for: existingCard)
-                    importedCards.append((card: existingCard, quantity: cardInfo.quantity, owned: existingCard.quantity > 0))
+                    let updatedQuantity = group.quantity(for: primary) + cardInfo.quantity
+                    group.setQuantity(updatedQuantity, for: primary)
+                    importedCards.append((card: primary, quantity: cardInfo.quantity, owned: primary.quantity > 0))
                 } else {
-                    // Card doesn't exist, fetch it and add to collection
+                    // Card doesn't exist (or consolidation failed), fetch it and add to collection
                     let dto = try await ScryfallService().fetchCard(named: cardInfo.name)
-                    let card = Card(from: dto, modelContext: modelContext)
-                    modelContext.insert(card)
+                    let card = try CardLibraryManager.upsertCard(from: dto, in: modelContext)
                     group.setQuantity(cardInfo.quantity, for: card)
                     importedCards.append((card: card, quantity: cardInfo.quantity, owned: false))
                 }
@@ -476,14 +543,22 @@ struct CardSelectionView: View {
                         }
                         .disabled(bulkText.isEmpty || isImporting)
                     }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            isBulkMode = false
+                        } label: {
+                            Label("Manual Picker", systemImage: "list.bullet")
+                        }
+                        .disabled(isImporting)
+                        .accessibilityLabel("Switch to manual picker")
+                    }
                 }
             } else {
                 List {
                     ForEach(filteredCards) { card in
                         CardSelectionRowView(
                             card: card,
-                            group: group,
-                            selectedQuantities: $selectedQuantities
+                            group: group
                         )
                     }
                 }

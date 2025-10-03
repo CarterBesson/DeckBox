@@ -37,9 +37,12 @@ struct ContentView: View {
                     SearchView()
                         .navigationTitle("Search")
                         .navigationBarTitleDisplayMode(.large)
+                        .glassEffect(.regular.tint(.orange).interactive())
                 }
             }
         }
+        //.glassEffect()
+        //.glassEffect(.regular.tint(.orange).interactive())
     }
 }
 
